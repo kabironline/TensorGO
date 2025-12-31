@@ -12,14 +12,10 @@ func (a *Tensor) Add(b *Tensor) *Tensor {
 
 	out.Backward = func() {
 		gradA := ReduceSumTo(out.Grad, out.Shape, a.Shape)
-		for i := range a.Grad {
-			a.Grad[i] += gradA[i]
-		}
+		a.AccumulateGrad(gradA)
 
 		gradB := ReduceSumTo(out.Grad, out.Shape, b.Shape)
-		for i := range b.Grad {
-			b.Grad[i] += gradB[i]
-		}
+		b.AccumulateGrad(gradB)
 	}
 	return out
 }
@@ -32,9 +28,7 @@ func (a *Tensor) Sub(b *Tensor) *Tensor {
 
 	out.Backward = func() {
 		gradA := ReduceSumTo(out.Grad, out.Shape, a.Shape)
-		for i := range a.Grad {
-			a.Grad[i] += gradA[i]
-		}
+		a.AccumulateGrad(gradA)
 
 		// gradB = -1 * out.Grad
 		negGrad := make([]float64, len(out.Grad))
@@ -42,9 +36,7 @@ func (a *Tensor) Sub(b *Tensor) *Tensor {
 			negGrad[i] = -v
 		}
 		gradB := ReduceSumTo(negGrad, out.Shape, b.Shape)
-		for i := range b.Grad {
-			b.Grad[i] += gradB[i]
-		}
+		b.AccumulateGrad(gradB)
 	}
 	return out
 }
@@ -61,16 +53,12 @@ func (a *Tensor) Mul(b *Tensor) *Tensor {
 		// Grad A = out.Grad * B
 		tempA := BroadcastMulOp(gradTensor, b)
 		gradA := ReduceSumTo(tempA.Data, tempA.Shape, a.Shape)
-		for i := range a.Grad {
-			a.Grad[i] += gradA[i]
-		}
+		a.AccumulateGrad(gradA)
 
 		// Grad B = out.Grad * A
 		tempB := BroadcastMulOp(gradTensor, a)
 		gradB := ReduceSumTo(tempB.Data, tempB.Shape, b.Shape)
-		for i := range b.Grad {
-			b.Grad[i] += gradB[i]
-		}
+		b.AccumulateGrad(gradB)
 	}
 	return out
 }
@@ -87,9 +75,7 @@ func (a *Tensor) Div(b *Tensor) *Tensor {
 		// Grad A = out.Grad / B
 		tempA := BroadcastDivOp(gradTensor, b)
 		gradA := ReduceSumTo(tempA.Data, tempA.Shape, a.Shape)
-		for i := range a.Grad {
-			a.Grad[i] += gradA[i]
-		}
+		a.AccumulateGrad(gradA)
 
 		// Grad B = - (out.Grad * A) / (B * B)
 		temp := BroadcastMulOp(gradTensor, a)
@@ -102,9 +88,7 @@ func (a *Tensor) Div(b *Tensor) *Tensor {
 		}
 
 		gradB := ReduceSumTo(negData, temp.Shape, b.Shape)
-		for i := range b.Grad {
-			b.Grad[i] += gradB[i]
-		}
+		b.AccumulateGrad(gradB)
 	}
 	return out
 }
@@ -147,10 +131,8 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 		mGradA := mat.NewDense(a.Shape[0], a.Shape[1], gradAData)
 		mGradA.Mul(mGradOut, mBT)
 
-		// Accumulate into a.Grad (Must use += for multiple paths in the graph)
-		for i := range a.Grad {
-			a.Grad[i] += gradAData[i]
-		}
+		// Accumulate into a.Grad
+		a.AccumulateGrad(gradAData)
 
 		// 2. Calculate Grad B: a.Transpose (n x m) * out.Grad (m x p)
 		aT := Contiguous(a.Transpose([]int{1, 0}))
@@ -161,9 +143,7 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 		mGradB.Mul(mAT, mGradOut)
 
 		// Accumulate into b.Grad
-		for i := range b.Grad {
-			b.Grad[i] += gradBData[i]
-		}
+		b.AccumulateGrad(gradBData)
 	}
 
 	// --- AUTOGRAD LOGIC END ---

@@ -97,3 +97,29 @@ func (t *Tensor) ZeroInit() {
 		t.Data[i] = 0.0
 	}
 }
+
+// AccumulateGrad adds the given gradient data to the tensor's gradient.
+// It handles non-contiguous tensors (views) correctly by mapping logical indices to physical indices.
+// grad must be a contiguous slice of data matching the logical shape of the tensor.
+func (t *Tensor) AccumulateGrad(grad []float64) {
+	if len(grad) != TotalSize(t.Shape) {
+		panic("AccumulateGrad: gradient size does not match tensor shape")
+	}
+
+	// Optimization for contiguous tensors
+	if IsContiguous(t.Shape, t.Strides) && t.Offset == 0 {
+		for i, g := range grad {
+			t.Grad[i] += g
+		}
+		return
+	}
+
+	// Slow path for views
+	// The input 'grad' is assumed to be contiguous and row-major, so we use default strides for it.
+	gradStrides := defaultStrides(t.Shape)
+	for i, g := range grad {
+		coords := CoordsFromLinearIndex(i, t.Shape, gradStrides)
+		physicalIdx := LinearIndexFromCoords(coords, t.Shape, t.Strides) + t.Offset
+		t.Grad[physicalIdx] += g
+	}
+}

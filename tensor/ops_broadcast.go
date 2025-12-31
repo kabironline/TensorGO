@@ -69,13 +69,21 @@ func (t *Tensor) BroadcastTo(targetShape []int) *Tensor {
 		}
 	}
 
-	return &Tensor{
+	out := &Tensor{
 		Data:    t.Data,
 		Shape:   append([]int(nil), targetShape...),
 		Strides: newStrides,
 		Offset:  t.Offset,
-		Grad:    t.Grad,
+		Grad:    make([]float64, TotalSize(targetShape)),
+		Parents: []*Tensor{t},
 	}
+
+	out.Backward = func() {
+		gradReduced := ReduceSumTo(out.Grad, out.Shape, t.Shape)
+		t.AccumulateGrad(gradReduced)
+	}
+
+	return out
 }
 
 // shapesEqual is a helper to check if two shapes are identical.

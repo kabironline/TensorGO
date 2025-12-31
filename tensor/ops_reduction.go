@@ -3,9 +3,9 @@ package tensor
 // Sum returns a new Tensor which is the sum of all elements in the original tensor.
 func (t *Tensor) Sum() *Tensor {
 	total := 0.0
-	// since the data is stored in a flat slice, we can just iterate over it
-
-	for _, v := range t.Data {
+	// Use Contiguous to handle views correctly
+	tContig := Contiguous(t)
+	for _, v := range tContig.Data {
 		total += v
 	}
 
@@ -15,9 +15,13 @@ func (t *Tensor) Sum() *Tensor {
 	// needs to be distributed back to all elements of the original tensor.
 	out.Backward = func() {
 		gradOut := out.Grad[0] // Gradient from the output tensor
-		for i := range t.Grad {
-			t.Grad[i] += gradOut // Distribute the gradient equally
+
+		// Create a gradient tensor full of gradOut
+		grad := make([]float64, TotalSize(t.Shape))
+		for i := range grad {
+			grad[i] = gradOut
 		}
+		t.AccumulateGrad(grad)
 	}
 	return out
 }
@@ -25,20 +29,24 @@ func (t *Tensor) Sum() *Tensor {
 // Mean returns a new Tensor which is the mean of all elements in the original tensor.
 func (t *Tensor) Mean() *Tensor {
 	total := 0.0
-	for _, v := range t.Data {
+	tContig := Contiguous(t)
+	for _, v := range tContig.Data {
 		total += v
 	}
-	mean := total / float64(len(t.Data))
+	mean := total / float64(len(tContig.Data))
 	out := NewTensor([]float64{mean}, []int{1}, t)
 	// --- Backward function ---
 	// During backpropagation, the gradient from the output (a single value)
 	// needs to be distributed back to all elements of the original tensor.
 	out.Backward = func() {
 		gradOut := out.Grad[0] // Gradient from the output tensor
-		gradPerElement := gradOut / float64(len(t.Data))
-		for i := range t.Grad {
-			t.Grad[i] += gradPerElement // Distribute the gradient equally
+		gradPerElement := gradOut / float64(TotalSize(t.Shape))
+
+		grad := make([]float64, TotalSize(t.Shape))
+		for i := range grad {
+			grad[i] = gradPerElement
 		}
+		t.AccumulateGrad(grad)
 	}
 	return out
 }
