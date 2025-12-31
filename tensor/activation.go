@@ -51,28 +51,59 @@ func (t *Tensor) Tanh() *Tensor {
 }
 
 func (t *Tensor) Softmax() *Tensor {
-	maxVal := t.Data[0]
-	for _, v := range t.Data {
-		if v > maxVal {
-			maxVal = v
-		}
+	if len(t.Shape) > 2 {
+		panic("Softmax only supports 1D or 2D tensors")
 	}
-	expSum := 0.0
-	expVals := make([]float64, len(t.Data))
-	for i, v := range t.Data {
-		expVals[i] = math.Exp(v - maxVal) // for numerical stability
-		expSum += expVals[i]
+
+	rows := 1
+	cols := len(t.Data)
+	if len(t.Shape) == 2 {
+		rows = t.Shape[0]
+		cols = t.Shape[1]
 	}
 
 	result := make([]float64, len(t.Data))
-	for i, v := range expVals {
-		result[i] = v / expSum
+
+	for r := 0; r < rows; r++ {
+		offset := r * cols
+		// Find max for numerical stability
+		maxVal := t.Data[offset]
+		for c := 1; c < cols; c++ {
+			if t.Data[offset+c] > maxVal {
+				maxVal = t.Data[offset+c]
+			}
+		}
+
+		// Compute exp and sum
+		expSum := 0.0
+		for c := 0; c < cols; c++ {
+			ex := math.Exp(t.Data[offset+c] - maxVal)
+			result[offset+c] = ex
+			expSum += ex
+		}
+
+		// Normalize
+		for c := 0; c < cols; c++ {
+			result[offset+c] /= expSum
+		}
 	}
+
 	out := NewTensor(result, append([]int{}, t.Shape...), t)
 	out.Backward = func() {
-		for i := range out.Data {
-			// Simplified gradient for softmax (not full Jacobian)
-			t.Grad[i] += out.Grad[i] * out.Data[i] * (1 - out.Data[i])
+		for r := 0; r < rows; r++ {
+			offset := r * cols
+			// Compute sum(y_k * grad_k) for this row
+			dot := 0.0
+			for c := 0; c < cols; c++ {
+				dot += out.Data[offset+c] * out.Grad[offset+c]
+			}
+
+			// Update gradients: y_i * (grad_i - dot)
+			for c := 0; c < cols; c++ {
+				y := out.Data[offset+c]
+				grad := out.Grad[offset+c]
+				t.Grad[offset+c] += y * (grad - dot)
+			}
 		}
 	}
 	return out

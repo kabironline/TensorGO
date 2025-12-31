@@ -2,4 +2,14 @@ module github.com/kabironline/nanograd
 
 go 1.24.2
 
-require gonum.org/v1/gonum v0.16.0
+require (
+	github.com/petar/GoMNIST v0.0.0-20150320212226-2fbe10d0fa63
+	github.com/stretchr/testify v1.11.1
+	gonum.org/v1/gonum v0.16.0
+)
+
+require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+)

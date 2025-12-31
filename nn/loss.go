@@ -53,12 +53,19 @@ func CrossEntropyLoss(predictions, targets *tensor.Tensor) *tensor.Tensor {
 		}
 	}
 
-	out := tensor.NewTensor([]float64{loss}, []int{1}, predictions, targets)
+	batchSize := 1
+	if len(predictions.Shape) > 0 {
+		batchSize = predictions.Shape[0]
+	}
+	meanLoss := loss / float64(batchSize)
+
+	out := tensor.NewTensor([]float64{meanLoss}, []int{1}, predictions, targets)
 	out.Backward = func() {
+		scale := 1.0 / float64(batchSize)
 		for i := range predictions.Data {
 			grad := -targets.Data[i] / (predictions.Data[i] + 1e-15)
-			predictions.Grad[i] += grad
-			targets.Grad[i] += -grad
+			predictions.Grad[i] += grad * scale
+			targets.Grad[i] += -grad * scale
 		}
 	}
 	return out
