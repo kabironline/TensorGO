@@ -1,23 +1,56 @@
 package tensor
 
 import (
+	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
 )
 
 // Add performs element-wise addition between two tensors.
-// It supports broadcasting and uses optimized Gonum paths where possible.
+// Optimized with a fast-path for identical shapes using Gonum SIMD and minimizing reduction overhead.
 func (a *Tensor) Add(b *Tensor) *Tensor {
+	// Fast path: Identical shapes avoid broadcasting logic and use SIMD.
+	if sameShape(a.Shape, b.Shape) {
+		res := make([]float64, len(a.Data))
+		floats.AddTo(res, a.Data, b.Data)
+		out := NewTensor(res, a.Shape, a, b)
+		out.Backward = func() {
+			a.AccumulateGrad(out.Grad)
+			b.AccumulateGrad(out.Grad)
+		}
+		return out
+	}
+
+	// General broadcasting path
 	out := BroadcastAddOp(a, b)
 	out.Parents = []*Tensor{a, b}
-
 	out.Backward = func() {
-		gradA := ReduceSumTo(out.Grad, out.Shape, a.Shape)
-		a.AccumulateGrad(gradA)
+		// Optimization: Skip ReduceSumTo if shapes match exactly.
+		if sameShape(out.Shape, a.Shape) {
+			a.AccumulateGrad(out.Grad)
+		} else {
+			a.AccumulateGrad(ReduceSumTo(out.Grad, out.Shape, a.Shape))
+		}
 
-		gradB := ReduceSumTo(out.Grad, out.Shape, b.Shape)
-		b.AccumulateGrad(gradB)
+		if sameShape(out.Shape, b.Shape) {
+			b.AccumulateGrad(out.Grad)
+		} else {
+			b.AccumulateGrad(ReduceSumTo(out.Grad, out.Shape, b.Shape))
+		}
 	}
 	return out
+}
+
+// sameShape is a helper to compare shapes quickly.
+func sameShape(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Sub performs element-wise subtraction between two tensors.
@@ -103,6 +136,7 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 		panic("Incompatible shapes for matrix multiplication")
 	}
 
+	// Ensure inputs are contiguous for Gonum; if already contiguous, this is a no-op.
 	aContig := Contiguous(a)
 	bContig := Contiguous(b)
 
@@ -113,39 +147,30 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 	resultData := make([]float64, m*p)
 	mC := mat.NewDense(m, p, resultData)
 
+	// Optimized BLAS call
 	mC.Mul(mA, mB)
 
 	out := NewTensor(resultData, []int{m, p}, a, b)
 
 	// --- AUTOGRAD LOGIC START ---
 	out.Backward = func() {
-		// 1. Calculate Grad A: out.Grad (m x p) * b.Transpose (p x n)
-		// We use Gonum again for the gradient calculation speed
-		bT := Contiguous(b.Transpose([]int{1, 0}))
-
-		// Wrap gradients in Gonum Dense for calculation
+		// Wrap gradients and data in Gonum Dense views.
+		// .T() is a zero-copy metadata operation in Gonum.
 		mGradOut := mat.NewDense(out.Shape[0], out.Shape[1], out.Grad)
-		mBT := mat.NewDense(bT.Shape[0], bT.Shape[1], bT.Data)
+		mAC := mat.NewDense(aContig.Shape[0], aContig.Shape[1], aContig.Data)
+		mBC := mat.NewDense(bContig.Shape[0], bContig.Shape[1], bContig.Data)
 
-		gradAData := make([]float64, a.Shape[0]*a.Shape[1])
-		mGradA := mat.NewDense(a.Shape[0], a.Shape[1], gradAData)
-		mGradA.Mul(mGradOut, mBT)
+		// 1. Grad A = GradOut * B^T
+		// Avoids the expensive Transpose() + Contiguous() copy cycle.
+		var mGradA mat.Dense
+		mGradA.Mul(mGradOut, mBC.T())
+		a.AccumulateGrad(mGradA.RawMatrix().Data)
 
-		// Accumulate into a.Grad
-		a.AccumulateGrad(gradAData)
-
-		// 2. Calculate Grad B: a.Transpose (n x m) * out.Grad (m x p)
-		aT := Contiguous(a.Transpose([]int{1, 0}))
-		mAT := mat.NewDense(aT.Shape[0], aT.Shape[1], aT.Data)
-
-		gradBData := make([]float64, b.Shape[0]*b.Shape[1])
-		mGradB := mat.NewDense(b.Shape[0], b.Shape[1], gradBData)
-		mGradB.Mul(mAT, mGradOut)
-
-		// Accumulate into b.Grad
-		b.AccumulateGrad(gradBData)
+		// 2. Grad B = A^T * GradOut
+		var mGradB mat.Dense
+		mGradB.Mul(mAC.T(), mGradOut)
+		b.AccumulateGrad(mGradB.RawMatrix().Data)
 	}
-
 	// --- AUTOGRAD LOGIC END ---
 
 	return out

@@ -32,17 +32,31 @@ func CoordsFromLinearIndex(index int, shape, strides []int) []int {
 	return coords
 }
 
+// PhysicalIndexFromLinearIndex converts a flat logical index into the corresponding physical index in the tensor's data array,
+// taking into account the tensor's strides and offset.
+// This optimized version avoids allocating intermediate coordinate slices.
+func PhysicalIndexFromLinearIndex(index int, shape, strides []int, offset int) int {
+	physicalIndex := offset
+	for i := len(shape) - 1; i >= 0; i-- {
+		dim := shape[i]
+		physicalIndex += (index % dim) * strides[i]
+		index /= dim
+	}
+	return physicalIndex
+}
+
 // IsContiguous checks if the tensor's data is stored in a contiguous block of memory in row-major order.
 func IsContiguous(shape, strides []int) bool {
-	expectedStride := 1
+	expected := 1
 	for i := len(shape) - 1; i >= 0; i-- {
-		if shape[i] == 1 {
-			continue // Skip dimensions of size 1
+		if s := shape[i]; s > 1 {
+			if strides[i] != expected {
+				return false
+			}
+			expected *= s
+		} else if s == 0 {
+			return true
 		}
-		if strides[i] != expectedStride {
-			return false
-		}
-		expectedStride *= shape[i]
 	}
 	return true
 }
@@ -54,21 +68,45 @@ func Contiguous(t *Tensor) *Tensor {
 		return t
 	}
 
-	totalSize := TotalSize(t.Shape)
+	shape := t.Shape
+	strides := t.Strides
+	rank := len(shape)
+	totalSize := TotalSize(shape)
+
 	newData := make([]float64, totalSize)
-	defStrides := defaultStrides(t.Shape)
+	tData := t.Data
+
+	// Optimized iterator: avoids O(D) work and allocations inside the loop.
+	// It uses an amortized O(1) coordinate update strategy.
+	coords := make([]int, rank)
+	currPos := t.Offset
+
+	// Precompute backsteps to avoid multiplication during iteration.
+	backsteps := make([]int, rank)
+	for i := range shape {
+		backsteps[i] = shape[i] * strides[i]
+	}
 
 	for i := range totalSize {
-		coords := CoordsFromLinearIndex(i, t.Shape, defStrides)
-		// Map logical coords to physical index in original (possibly non-contiguous) data
-		oldIdx := LinearIndexFromCoords(coords, t.Shape, t.Strides) + t.Offset
-		newData[i] = t.Data[oldIdx]
+		newData[i] = tData[currPos]
+
+		// Increment coordinates and update physical position
+		for j := rank - 1; j >= 0; j-- {
+			coords[j]++
+			currPos += strides[j]
+			if coords[j] < shape[j] {
+				break
+			}
+			// Dimension wrap-around
+			currPos -= backsteps[j]
+			coords[j] = 0
+		}
 	}
 
 	return &Tensor{
 		Data:    newData,
-		Shape:   append([]int{}, t.Shape...),
-		Strides: defStrides,
+		Shape:   append([]int{}, shape...),
+		Strides: defaultStrides(shape),
 		Grad:    make([]float64, totalSize),
 	}
 }

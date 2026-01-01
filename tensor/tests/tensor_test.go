@@ -198,7 +198,7 @@ func BenchmarkBroadcastAddSlowPath(b *testing.B) {
 
 func BenchmarkMatMul(b *testing.B) {
 	// 256x256 matrix multiplication
-	size := 256
+	size := (28 * 28)
 	dataA := make([]float64, size*size)
 	dataB := make([]float64, size*size)
 	tensA := tensor.NewTensor(dataA, []int{size, size})

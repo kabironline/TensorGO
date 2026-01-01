@@ -74,7 +74,7 @@ func TestMNIST(t *testing.T) {
 	optimizer := optim.NewAdam(model.Parameters(), 0.005)
 
 	// Training loop with CrossEntropy loss
-	const numEpochs = 30
+	const numEpochs = 5
 	const batchSize = 32
 
 	for epoch := range numEpochs {
@@ -114,9 +114,8 @@ func TestMNIST(t *testing.T) {
 		}
 
 		avgLoss := totalLoss / float64(batchCount)
-		if epoch%5 == 0 {
-			t.Logf("Epoch %d, Avg Loss: %f", epoch, avgLoss)
-		}
+		t.Logf("Epoch %d, Avg Loss: %f", epoch, avgLoss)
+
 	}
 
 	// Evaluate on full test set
