@@ -123,3 +123,12 @@ func (t *Tensor) AccumulateGrad(grad []float64) {
 		t.Grad[physicalIdx] += g
 	}
 }
+
+// TotalSize computes the total number of elements of a tensor from its shape.
+func (t *Tensor) TotalSize() int {
+	total := 1
+	for _, dim := range t.Shape {
+		total *= dim
+	}
+	return total
+}

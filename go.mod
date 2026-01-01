@@ -3,6 +3,7 @@ module github.com/kabironline/nanograd
 go 1.24.2
 
 require (
+	github.com/nlpodyssey/safetensors v0.0.0-20250209183917-bfb01cc25f7c
 	github.com/petar/GoMNIST v0.0.0-20150320212226-2fbe10d0fa63
 	github.com/stretchr/testify v1.11.1
 	gonum.org/v1/gonum v0.16.0

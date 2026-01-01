@@ -46,11 +46,10 @@ func (a *Adam) Step() {
 	denom1 := 1 - beta1Pow
 	denom2 := 1 - beta2Pow
 
-	numWorkers := a.NumWorkers
 	ch := make(chan int)
 	var wg sync.WaitGroup
 
-	for w := 0; w < numWorkers; w++ {
+	for range a.NumWorkers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
