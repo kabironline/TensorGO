@@ -145,7 +145,7 @@ func LoadModuleAt(idx int, loaded *safetensors.SafeTensors) (Module, error) {
 	}
 
 	// Check for activations
-	for _, act := range []string{"relu", "sigmoid", "tanh", "softmax"} {
+	for _, act := range activations {
 		key := fmt.Sprintf("layer_%d.activation.%s", idx, act)
 		if _, ok := loaded.Tensor(key); ok {
 			switch act {

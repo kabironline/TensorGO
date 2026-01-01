@@ -9,6 +9,13 @@ import (
 	"github.com/nlpodyssey/safetensors"
 )
 
+var activations = []string{
+	"relu",
+	"sigmoid",
+	"tanh",
+	"softmax",
+}
+
 type ReLU struct{}
 
 func (r *ReLU) Forward(x *tensor.Tensor) *tensor.Tensor { return x.ReLU() }
