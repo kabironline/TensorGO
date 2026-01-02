@@ -28,12 +28,149 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 		newStrides[i] = t.Strides[axis]
 	}
 
-	return &Tensor{
+	out := &Tensor{
 		Data:    t.Data,
 		Shape:   newShape,
 		Strides: newStrides,
 		Offset:  t.Offset,
-		Grad:    t.Grad,
+		Grad:    make([]float64, TotalSize(newShape)),
 		Parents: []*Tensor{t},
 	}
+
+	out.Backward = func() {
+		// Nothing to do if no gradient was produced for the output.
+		if out.Grad == nil {
+			return
+		}
+
+		// Ensure parent has a gradient buffer to accumulate into.
+		if t.Grad == nil {
+			t.Grad = make([]float64, len(t.Data))
+		}
+
+		// Build inverse permutation: for each axis k in the original tensor,
+		// inv[k] gives the index in out.Shape corresponding to that axis.
+		inv := make([]int, len(order))
+		for i, axis := range order {
+			inv[axis] = i
+		}
+
+		total := TotalSize(out.Shape)
+		if total == 0 {
+			return
+		}
+
+		// Fast-path: identity permutation -> direct accumulation.
+		isIdentity := true
+		for k := range order {
+			if order[k] != k {
+				isIdentity = false
+				break
+			}
+		}
+		if isIdentity {
+			t.AccumulateGrad(out.Grad)
+			return
+		}
+
+		// Generic path: iterate logical coordinates of the output once and map
+		// them to the parent's physical indices.
+		coords := make([]int, len(out.Shape))
+		for i := 0; i < total; i++ {
+			idx := i
+			for k := len(coords) - 1; k >= 0; k-- {
+				coords[k] = idx % out.Shape[k]
+				idx /= out.Shape[k]
+			}
+
+			outIdx := out.Offset
+			tIdx := t.Offset
+			for k := 0; k < len(coords); k++ {
+				outIdx += coords[k] * out.Strides[k]
+				tIdx += coords[inv[k]] * t.Strides[k]
+			}
+			t.Grad[tIdx] += out.Grad[outIdx]
+		}
+	}
+
+	return out
+}
+
+// Reshape returns a new tensor with the same data but a different shape.
+func (t *Tensor) Reshape(newShape []int) *Tensor {
+	totalOld := TotalSize(t.Shape)
+	totalNew := TotalSize(newShape)
+	if totalOld != totalNew {
+		panic("Reshape: total size must remain the same")
+	}
+
+	out := &Tensor{
+		Data:    t.Data,
+		Shape:   newShape,
+		Strides: ComputeStrides(newShape),
+		Offset:  t.Offset,
+		Grad:    make([]float64, totalNew),
+		Parents: []*Tensor{t},
+	}
+	out.Backward = func() {
+		// Nothing to do if no gradient was produced for the output.
+		if out.Grad == nil {
+			return
+		}
+
+		// Ensure parent has a gradient buffer to accumulate into.
+		if t.Grad == nil {
+			t.Grad = make([]float64, len(t.Data))
+		}
+
+		total := TotalSize(out.Shape)
+		if total == 0 {
+			return
+		}
+
+		// Fast-path: shapes and strides identical -> direct accumulation.
+		if len(out.Shape) == len(t.Shape) {
+			same := true
+			for i := range out.Shape {
+				if out.Shape[i] != t.Shape[i] || out.Strides[i] != t.Strides[i] {
+					same = false
+					break
+				}
+			}
+			if same {
+				t.AccumulateGrad(out.Grad)
+				return
+			}
+		}
+
+		// Generic path: iterate linear index and map it to both tensors'
+		// multi-dimensional coordinates, then accumulate into parent's grad.
+		outCoords := make([]int, len(out.Shape))
+		tCoords := make([]int, len(t.Shape))
+		for i := 0; i < total; i++ {
+			idx := i
+			for k := len(outCoords) - 1; k >= 0; k-- {
+				outCoords[k] = idx % out.Shape[k]
+				idx /= out.Shape[k]
+			}
+
+			idx = i
+			for k := len(tCoords) - 1; k >= 0; k-- {
+				tCoords[k] = idx % t.Shape[k]
+				idx /= t.Shape[k]
+			}
+
+			// out.Grad is a contiguous buffer that starts at 0, so index it by `i`
+			gradVal := out.Grad[i]
+
+			tIdx := t.Offset
+			for k := 0; k < len(tCoords); k++ {
+				tIdx += tCoords[k] * t.Strides[k]
+			}
+
+			t.Grad[tIdx] += gradVal
+		}
+	}
+
+	return out
 }

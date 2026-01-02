@@ -335,3 +335,118 @@ func (a *Tensor) Inverse() *Tensor {
 	}
 	return out
 }
+
+// Slice returns a sub-tensor defined by the provided start and end indexes for each dimension.
+func (t *Tensor) Slice(starts, ends []int) *Tensor {
+	if len(starts) != len(t.Shape) || len(ends) != len(t.Shape) {
+		panic("Slice requires start and end indices for each dimension")
+	}
+
+	nd := len(t.Shape)
+	// Scalar tensor
+	if nd == 0 {
+		return t
+	}
+
+	// Ensure strides exist (row-major / C-contiguous by default)
+	strides := t.Strides
+	if strides == nil || len(strides) != nd {
+		strides = make([]int, nd)
+		strides[nd-1] = 1
+		for i := nd - 2; i >= 0; i-- {
+			strides[i] = strides[i+1] * t.Shape[i+1]
+		}
+	}
+
+	offset := 0
+	newShape := make([]int, nd)
+	fullSlice := true
+
+	for i := 0; i < nd; i++ {
+		s := starts[i]
+		e := ends[i]
+
+		// support negative indices (Python-style)
+		if s < 0 {
+			s += t.Shape[i]
+		}
+		if e < 0 {
+			e += t.Shape[i]
+		}
+
+		if s < 0 || s > t.Shape[i] || e < 0 || e > t.Shape[i] || s > e {
+			panic("invalid slice indices")
+		}
+
+		newShape[i] = e - s
+		if s != 0 || e != t.Shape[i] {
+			fullSlice = false
+		}
+		offset += s * strides[i]
+	}
+
+	// If the slice is the entire tensor, return it directly.
+	if fullSlice {
+		return t
+	}
+
+	out := &Tensor{
+		Data:    t.Data[offset:], // view starts at offset
+		Shape:   newShape,
+		Strides: strides,
+	}
+	out.Parents = []*Tensor{t}
+
+	out.Backward = func() {
+		// Nothing to propagate if no gradient is present.
+		if len(out.Grad) == 0 {
+			return
+		}
+
+		// Build a full-sized gradient for the parent and place the sliced gradient into it.
+		parentGrad := make([]float64, len(t.Data))
+
+		// Fast path for scalar-like result (0-d or all dims size 1).
+		if len(out.Shape) == 0 || len(out.Grad) == 1 && product(out.Shape) == 1 {
+			parentGrad[offset] += out.Grad[0]
+			t.AccumulateGrad(parentGrad)
+			return
+		}
+
+		// Iterate over coordinates in the output tensor and map them back to parent indices.
+		indices := make([]int, len(out.Shape))
+		for _, v := range out.Grad {
+			// compute parent flat index
+			pIdx := offset
+			for d := range indices {
+				pIdx += indices[d] * strides[d]
+			}
+			parentGrad[pIdx] += v
+
+			// increment multi-dimensional index
+			for d := len(indices) - 1; d >= 0; d-- {
+				indices[d]++
+				if indices[d] < out.Shape[d] {
+					break
+				}
+				indices[d] = 0
+			}
+		}
+
+		t.AccumulateGrad(parentGrad)
+	}
+
+	return out
+}
+
+// product returns the product of elements in s (helper used locally).
+func product(s []int) int {
+	if len(s) == 0 {
+		return 1
+	}
+	prod := 1
+	for _, v := range s {
+		prod *= v
+	}
+	return prod
+}

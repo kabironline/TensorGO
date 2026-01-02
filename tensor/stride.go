@@ -124,6 +124,19 @@ func NormalizeIndexes(indexes []int, shape []int) []int {
 	return normalized
 }
 
+// ComputeStrides calculates the default row-major strides for a given shape.
+func ComputeStrides(shape []int) []int {
+	strides := make([]int, len(shape))
+	if len(shape) == 0 {
+		return strides
+	}
+	strides[len(shape)-1] = 1
+	for i := len(shape) - 2; i >= 0; i-- {
+		strides[i] = strides[i+1] * shape[i+1]
+	}
+	return strides
+}
+
 // ValidateIndexes checks if the provided indexes are within the bounds of the tensor's shape.
 // It panics if any index is out of bounds.
 func ValidateIndexes(indexes []int, shape []int) {

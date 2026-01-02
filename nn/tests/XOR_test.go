@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/kabironline/nanograd/nn"
+	"github.com/kabironline/nanograd/nn/activations"
 	"github.com/kabironline/nanograd/optim"
 	"github.com/kabironline/nanograd/tensor"
 	"github.com/stretchr/testify/assert"
@@ -20,14 +21,13 @@ func TestXOR(t *testing.T) {
 
 	// 2. Model Architecture
 	// 2 inputs -> 4 hidden (ReLU) -> 1 output
-	model := nn.NewMLP(
-		2,
-		[]int{100, 100, 1},
-		[]nn.Module{
-			&nn.ReLU{},
-			&nn.ReLU{},
-			&nn.Sigmoid{},
-		},
+	model := nn.NewSequential(
+		nn.NewLinear(2, 100),
+		&activations.ReLU{},
+		nn.NewLinear(100, 100),
+		&activations.ReLU{},
+		nn.NewLinear(100, 1),
+		&activations.Sigmoid{},
 	)
 	optimizer := optim.NewAdam(model.Parameters(), 0.01)
 
@@ -81,14 +81,13 @@ func BenchmarkXORTraining(b *testing.B) {
 	// Setup same as TestXOR
 	inputs := tensor.NewTensor([]float64{0, 0, 0, 1, 1, 0, 1, 1}, []int{4, 2})
 	targets := tensor.NewTensor([]float64{0, 1, 1, 0}, []int{4, 1})
-	model := nn.NewMLP(
-		2,
-		[]int{8, 8, 1},
-		[]nn.Module{
-			&nn.ReLU{},
-			&nn.ReLU{},
-			&nn.Sigmoid{},
-		},
+	model := nn.NewSequential(
+		nn.NewLinear(2, 8),
+		&activations.ReLU{},
+		nn.NewLinear(8, 8),
+		&activations.ReLU{},
+		nn.NewLinear(8, 1),
+		&activations.Sigmoid{},
 	)
 	optimizer := optim.NewSGD(model.Parameters(), 0.01)
 	b.ResetTimer()
