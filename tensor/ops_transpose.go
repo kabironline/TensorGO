@@ -33,7 +33,8 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 		Shape:   newShape,
 		Strides: newStrides,
 		Offset:  t.Offset,
-		Grad:    make([]float64, TotalSize(newShape)),
+		// Grad allocated lazily
+		Grad:    nil,
 		Parents: []*Tensor{t},
 	}
 
@@ -109,7 +110,8 @@ func (t *Tensor) Reshape(newShape []int) *Tensor {
 		Shape:   newShape,
 		Strides: ComputeStrides(newShape),
 		Offset:  t.Offset,
-		Grad:    make([]float64, totalNew),
+		// Grad allocated lazily
+		Grad:    nil,
 		Parents: []*Tensor{t},
 	}
 	out.Backward = func() {

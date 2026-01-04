@@ -1,5 +1,7 @@
 package tensor
 
+import "fmt"
+
 // TotalSize calculates the total number of elements in a tensor given its shape.
 func TotalSize(shape []int) int {
 	total := 1
@@ -9,62 +11,49 @@ func TotalSize(shape []int) int {
 	return total
 }
 
-// LinearIndexFromCoords converts multi-dimensional coordinates to a linear index based on the tensor's strides.
-// Note: We do not perform bounds checking against TotalSize(shape) here because for views (like slices or broadcasts),
-// the physical index can exceed the logical total size of the view.
-func LinearIndexFromCoords(coords, shape, strides []int) int {
-	if len(coords) != len(strides) {
-		panic("LinearIndexFromCoords: Length of coords and strides must be the same")
+// getIndex converts multidimensional coordinates into a physical index into
+// the underlying data slice, validating bounds and taking into account the
+// tensor's offset and strides.
+func (t *Tensor) getIndex(indices ...int) int {
+	if len(indices) != len(t.Shape) {
+		panic(fmt.Sprintf("expected %d indices, got %d", len(t.Shape), len(indices)))
 	}
-	index := 0
-	for i := range coords {
-		index += coords[i] * strides[i]
+	idx := t.Offset
+	for i, ind := range indices {
+		if ind < 0 || ind >= t.Shape[i] {
+			panic(fmt.Sprintf("index %d out of bounds for dimension %d (size %d)", ind, i, t.Shape[i]))
+		}
+		idx += ind * t.Strides[i]
 	}
-	return index
+	return idx
 }
 
-// CoordsFromLinearIndex converts a flat logical index into coordinates for a given shape and its default strides.
-func CoordsFromLinearIndex(index int, shape, strides []int) []int {
-	coords := make([]int, len(shape))
-	for i := range shape {
-		coords[i] = (index / strides[i]) % shape[i]
-	}
-	return coords
+// At returns the element at the given multi-dimensional indices.
+func (t *Tensor) At(indices ...int) float64 {
+	return t.Data[t.getIndex(indices...)]
 }
 
-// PhysicalIndexFromLinearIndex converts a flat logical index into the corresponding physical index in the tensor's data array,
-// taking into account the tensor's strides and offset.
-// This optimized version avoids allocating intermediate coordinate slices.
-func PhysicalIndexFromLinearIndex(index int, shape, strides []int, offset int) int {
-	physicalIndex := offset
-	for i := len(shape) - 1; i >= 0; i-- {
-		dim := shape[i]
-		physicalIndex += (index % dim) * strides[i]
+// SetAt sets the value at the given multi-dimensional indices.
+func (t *Tensor) SetAt(val float64, indices ...int) {
+	t.Data[t.getIndex(indices...)] = val
+}
+
+// PhysicalIndexFromLinearIndex converts a logical flat index to the physical
+// index in the underlying data buffer, accounting for strides and offset.
+func (t *Tensor) PhysicalIndexFromLinearIndex(index int) int {
+	physicalIndex := t.Offset
+	for i := len(t.Shape) - 1; i >= 0; i-- {
+		dim := t.Shape[i]
+		physicalIndex += (index % dim) * t.Strides[i]
 		index /= dim
 	}
 	return physicalIndex
 }
 
-// IsContiguous checks if the tensor's data is stored in a contiguous block of memory in row-major order.
-func IsContiguous(shape, strides []int) bool {
-	expected := 1
-	for i := len(shape) - 1; i >= 0; i-- {
-		if s := shape[i]; s > 1 {
-			if strides[i] != expected {
-				return false
-			}
-			expected *= s
-		} else if s == 0 {
-			return true
-		}
-	}
-	return true
-}
-
 // Contiguous returns a new tensor that is a contiguous copy of the original tensor.
 // If the original tensor is already contiguous, it returns the original tensor.
 func Contiguous(t *Tensor) *Tensor {
-	if IsContiguous(t.Shape, t.Strides) {
+	if t.Contiguous() {
 		return t
 	}
 
@@ -104,10 +93,11 @@ func Contiguous(t *Tensor) *Tensor {
 	}
 
 	return &Tensor{
-		Data:    newData,
-		Shape:   append([]int{}, shape...),
-		Strides: computeStrides(shape),
-		Grad:    make([]float64, totalSize),
+		Data:       newData,
+		Shape:      append([]int{}, shape...),
+		Strides:    computeStrides(shape),
+		Grad:       nil,
+		contiguous: true,
 	}
 }
 

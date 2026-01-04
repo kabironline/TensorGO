@@ -26,8 +26,11 @@ func NewTensor(data []float64, shape []int, parents ...*Tensor) *Tensor {
 		Data:    data,
 		Shape:   shape,
 		Strides: computeStrides(shape),
-		Grad:    data,
-		Parents: parents,
+		// Grad is allocated lazily to avoid unnecessary allocations for tensors
+		// that never participate in backpropagation.
+		Grad:       nil,
+		Parents:    parents,
+		contiguous: true,
 	}
 }
 
@@ -41,7 +44,9 @@ func NewIdentityTensor(size int) *Tensor {
 		Data:    data,
 		Shape:   []int{size, size},
 		Strides: []int{size, 1},
-		Grad:    make([]float64, size*size),
+		// allocate Grad lazily
+		Grad:       nil,
+		contiguous: true,
 	}
 }
 
@@ -111,8 +116,11 @@ func (t *Tensor) AccumulateGrad(grad []float64) {
 		panic("AccumulateGrad: gradient size does not match tensor shape")
 	}
 
+	// Ensure a grad buffer exists for accumulation.
+	t.ensureGrad()
+
 	// Fast path: contiguous tensors use SIMD
-	if IsContiguous(t.Shape, t.Strides) && t.Offset == 0 {
+	if t.Contiguous() && t.Offset == 0 {
 		floats.Add(t.Grad, grad)
 		return
 	}
@@ -127,7 +135,7 @@ func (t *Tensor) AccumulateGrad(grad []float64) {
 
 	// Slow path for views
 	for i, g := range grad {
-		physicalIdx := PhysicalIndexFromLinearIndex(i, t.Shape, t.Strides, t.Offset)
+		physicalIdx := t.PhysicalIndexFromLinearIndex(i)
 		t.Grad[physicalIdx] += g
 	}
 }
@@ -139,4 +147,24 @@ func (t *Tensor) TotalSize() int {
 		total *= dim
 	}
 	return total
+}
+
+// Contiguous returns whether the tensor's storage is contiguous in row-major order.
+func (t *Tensor) Contiguous() bool {
+	return t.contiguous
+}
+
+// ensureGrad makes sure t.Grad is allocated. It's safe to call multiple times.
+func (t *Tensor) ensureGrad() {
+	if t.Grad == nil {
+		// Use underlying data length to ensure we can index into physical positions
+		t.Grad = make([]float64, len(t.Data))
+	}
+}
+
+// AllocGrad ensures the tensor has a gradient buffer allocated. Public helper
+// for packages that create parameters which will always participate in
+// backpropagation (e.g., model weights and biases).
+func (t *Tensor) AllocGrad() {
+	t.ensureGrad()
 }

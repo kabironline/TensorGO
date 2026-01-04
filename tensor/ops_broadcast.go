@@ -74,7 +74,8 @@ func (t *Tensor) BroadcastTo(targetShape []int) *Tensor {
 		Shape:   append([]int(nil), targetShape...),
 		Strides: newStrides,
 		Offset:  t.Offset,
-		Grad:    make([]float64, TotalSize(targetShape)),
+		// Grad allocated lazily
+		Grad:    nil,
 		Parents: []*Tensor{t},
 	}
 
@@ -107,7 +108,7 @@ func BroadcastAddOp(a, b *Tensor) *Tensor {
 	outData := make([]float64, total)
 
 	// Fast path: same shape and contiguous row-major
-	if shapesEqual(a.Shape, b.Shape) && IsContiguous(a.Shape, a.Strides) && IsContiguous(b.Shape, b.Strides) && a.Offset == 0 && b.Offset == 0 {
+	if shapesEqual(a.Shape, b.Shape) && a.Contiguous() && b.Contiguous() && a.Offset == 0 && b.Offset == 0 {
 		floats.AddTo(outData, a.Data, b.Data)
 		return NewTensor(outData, outShape)
 	}
@@ -146,7 +147,7 @@ func BroadcastSubOp(a, b *Tensor) *Tensor {
 	total := TotalSize(outShape)
 	outData := make([]float64, total)
 
-	if shapesEqual(a.Shape, b.Shape) && IsContiguous(a.Shape, a.Strides) && IsContiguous(b.Shape, b.Strides) && a.Offset == 0 && b.Offset == 0 {
+	if shapesEqual(a.Shape, b.Shape) && a.Contiguous() && b.Contiguous() && a.Offset == 0 && b.Offset == 0 {
 		floats.SubTo(outData, a.Data, b.Data)
 		return NewTensor(outData, outShape)
 	}
@@ -184,7 +185,7 @@ func BroadcastMulOp(a, b *Tensor) *Tensor {
 	total := TotalSize(outShape)
 	outData := make([]float64, total)
 
-	if shapesEqual(a.Shape, b.Shape) && IsContiguous(a.Shape, a.Strides) && IsContiguous(b.Shape, b.Strides) && a.Offset == 0 && b.Offset == 0 {
+	if shapesEqual(a.Shape, b.Shape) && a.Contiguous() && b.Contiguous() && a.Offset == 0 && b.Offset == 0 {
 		floats.MulTo(outData, a.Data, b.Data)
 		return NewTensor(outData, outShape)
 	}
@@ -222,7 +223,7 @@ func BroadcastDivOp(a, b *Tensor) *Tensor {
 	total := TotalSize(outShape)
 	outData := make([]float64, total)
 
-	if shapesEqual(a.Shape, b.Shape) && IsContiguous(a.Shape, a.Strides) && IsContiguous(b.Shape, b.Strides) && a.Offset == 0 && b.Offset == 0 {
+	if shapesEqual(a.Shape, b.Shape) && a.Contiguous() && b.Contiguous() && a.Offset == 0 && b.Offset == 0 {
 		floats.DivTo(outData, a.Data, b.Data)
 		return NewTensor(outData, outShape)
 	}

@@ -9,53 +9,69 @@ import (
 func (t *Tensor) ReLU() *Tensor {
 	tContig := Contiguous(t)
 	result := make([]float64, len(tContig.Data))
-
-	// Parallelize the forward pass
-	numWorkers := 8
-	chunk := (len(tContig.Data) + numWorkers - 1) / numWorkers
-	done := make(chan struct{}, numWorkers)
-	for w := 0; w < numWorkers; w++ {
-		start := w * chunk
-		end := start + chunk
-		if end > len(tContig.Data) {
-			end = len(tContig.Data)
+	// For small tensors, avoid goroutine/channel overhead and compute
+	// sequentially. For larger tensors, use a simple worker fan-out.
+	n := len(tContig.Data)
+	if n < 4096 {
+		for i := 0; i < n; i++ {
+			result[i] = max(0, tContig.Data[i])
 		}
-		go func(start, end int) {
-			for i := start; i < end; i++ {
-				result[i] = max(0, tContig.Data[i])
-			}
-			done <- struct{}{}
-		}(start, end)
-	}
-	for w := 0; w < numWorkers; w++ {
-		<-done
-	}
-
-	out := NewTensor(result, append([]int{}, t.Shape...), t)
-	out.Backward = func() {
-		grad := pools.GetZeroedBuffer(len(out.Grad))
-		// Parallelize the backward pass
+	} else {
 		numWorkers := 8
-		chunk := (len(out.Data) + numWorkers - 1) / numWorkers
+		chunk := (n + numWorkers - 1) / numWorkers
 		done := make(chan struct{}, numWorkers)
 		for w := 0; w < numWorkers; w++ {
 			start := w * chunk
 			end := start + chunk
-			if end > len(out.Data) {
-				end = len(out.Data)
+			if end > n {
+				end = n
 			}
 			go func(start, end int) {
 				for i := start; i < end; i++ {
-					if out.Data[i] > 0 {
-						// Gradient flows only where ReLU is active
-						grad[i] = out.Grad[i]
-					}
+					result[i] = max(0, tContig.Data[i])
 				}
 				done <- struct{}{}
 			}(start, end)
 		}
 		for w := 0; w < numWorkers; w++ {
 			<-done
+		}
+	}
+
+	out := NewTensor(result, append([]int{}, t.Shape...), t)
+	out.Backward = func() {
+		grad := pools.GetZeroedBuffer(len(out.Grad))
+		// For small tensors, avoid goroutine overhead.
+		if len(out.Data) < 4096 {
+			for i := 0; i < len(out.Data); i++ {
+				if out.Data[i] > 0 {
+					grad[i] = out.Grad[i]
+				}
+			}
+		} else {
+			// Parallelize the backward pass
+			numWorkers := 8
+			chunk := (len(out.Data) + numWorkers - 1) / numWorkers
+			done := make(chan struct{}, numWorkers)
+			for w := 0; w < numWorkers; w++ {
+				start := w * chunk
+				end := start + chunk
+				if end > len(out.Data) {
+					end = len(out.Data)
+				}
+				go func(start, end int) {
+					for i := start; i < end; i++ {
+						if out.Data[i] > 0 {
+							// Gradient flows only where ReLU is active
+							grad[i] = out.Grad[i]
+						}
+					}
+					done <- struct{}{}
+				}(start, end)
+			}
+			for w := 0; w < numWorkers; w++ {
+				<-done
+			}
 		}
 		t.AccumulateGrad(grad)
 		pools.PutBuffer(grad)

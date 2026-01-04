@@ -99,16 +99,24 @@ func sumAcrossDimension(data []float64, shape []int, dim int) []float64 {
 	strides := computeStrides(shape)
 	outStrides := computeStrides(outShape)
 
+	// Preallocate coords to avoid per-iteration allocations.
+	coords := make([]int, len(shape))
+
 	// Iterate over the input data
 	for i, val := range data {
-		// Convert linear index to coordinates
-		coords := CoordsFromLinearIndex(i, shape, strides)
+		// Convert linear index to coordinates (fill in-place)
+		for k := 0; k < len(shape); k++ {
+			coords[k] = (i / strides[k]) % shape[k]
+		}
 
 		// Project coordinates to output (dim becomes 0)
 		coords[dim] = 0
 
 		// Convert back to linear index in output
-		outIdx := LinearIndexFromCoords(coords, outShape, outStrides)
+		outIdx := 0
+		for k := range coords {
+			outIdx += coords[k] * outStrides[k]
+		}
 
 		outData[outIdx] += val
 	}

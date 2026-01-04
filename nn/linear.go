@@ -22,6 +22,11 @@ func NewLinear(inFeatures, outFeatures int) *Linear {
 	w.RandomInit()
 	b.ZeroInit()
 
+	// These are model parameters and will be used in backprop; allocate
+	// their gradient buffers upfront to avoid per-iteration allocations.
+	w.AllocGrad()
+	b.AllocGrad()
+
 	return &Linear{
 		Weight: w,
 		Bias:   b,

@@ -169,6 +169,7 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 		gradAData := pools.GetBuffer(aContig.Shape[0] * aContig.Shape[1])
 		mGradA := mat.NewDense(aContig.Shape[0], aContig.Shape[1], gradAData)
 		mGradA.Mul(mGradOut, mBC.T())
+		// Use AccumulateGrad which will allocate lazy gradients as needed.
 		a.AccumulateGrad(mGradA.RawMatrix().Data)
 		pools.PutBuffer(gradAData)
 
@@ -260,6 +261,8 @@ func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
 			}
 		}
 		// Accumulate into c.Grad, handling broadcast shape
+		// Ensure c has a gradient buffer allocated.
+		c.ensureGrad()
 		if len(c.Shape) == 1 && c.Shape[0] == p {
 			for j := range gradC {
 				c.Grad[j] += gradC[j]
@@ -315,6 +318,8 @@ func (a *Tensor) MatVecMul(b *Tensor) *Tensor {
 		gradAData := pools.GetBuffer(len(a.Data))
 		mGradA := mat.NewDense(a.Shape[0], a.Shape[1], gradAData)
 		mGradA.Outer(1, mGradOut, vB)
+		// Ensure a has a gradient buffer before accumulating directly into it.
+		a.ensureGrad()
 		for i, val := range mGradA.RawMatrix().Data {
 			a.Grad[i] += val
 		}
@@ -324,6 +329,8 @@ func (a *Tensor) MatVecMul(b *Tensor) *Tensor {
 		gradBData := pools.GetBuffer(len(b.Data))
 		vGradB := mat.NewVecDense(b.Shape[0], gradBData)
 		vGradB.MulVec(mA.T(), mGradOut)
+		// Ensure b has a gradient buffer before accumulating directly into it.
+		b.ensureGrad()
 		for i, val := range vGradB.RawVector().Data {
 			b.Grad[i] += val
 		}

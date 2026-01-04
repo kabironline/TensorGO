@@ -26,7 +26,7 @@ func TestNewTensor(t *testing.T) {
 		}
 	}
 
-	if !tensor.IsContiguous(tens.Shape, tens.Strides) {
+	if !tens.Contiguous() {
 		t.Error("New tensor should be contiguous")
 	}
 }
@@ -72,15 +72,13 @@ func TestTranspose(t *testing.T) {
 		t.Errorf("Expected shape [3, 2], got %v", transposed.Shape)
 	}
 
-	if tensor.IsContiguous(transposed.Shape, transposed.Strides) {
+	if transposed.Contiguous() {
 		t.Error("Transposed tensor should not be contiguous")
 	}
 
 	// Verify mapping: Transposed[1, 0] should be Original[0, 1] = 2
-	coords := []int{1, 0}
-	idx := tensor.LinearIndexFromCoords(coords, transposed.Shape, transposed.Strides) + transposed.Offset
-	if tens.Data[idx] != 2 {
-		t.Errorf("Expected value at transposed [1, 0] to be 2, got %f", tens.Data[idx])
+	if transposed.At(1, 0) != tens.At(0, 1) {
+		t.Errorf("Expected value at transposed [1, 0] to be %f, got %f", tens.At(0, 1), transposed.At(1, 0))
 	}
 }
 
@@ -125,6 +123,25 @@ func TestBroadcastMul(t *testing.T) {
 	}
 }
 
+func TestAtSetAt(t *testing.T) {
+	data := make([]float64, 6)
+	tens := tensor.NewTensor(data, []int{2, 3})
+
+	// Set a value and read it back
+	tens.SetAt(42.0, 1, 2)
+	if tens.At(1, 2) != 42.0 {
+		t.Fatalf("Expected tens.At(1,2) == 42.0, got %f", tens.At(1, 2))
+	}
+
+	// Out-of-bounds should panic
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Expected panic for out-of-bounds index")
+		}
+	}()
+	_ = tens.At(2, 0)
+}
+
 func TestMatMul(t *testing.T) {
 	// (2, 3) * (3, 2) -> (2, 2)
 	a := tensor.NewTensor([]float64{1, 2, 3, 4, 5, 6}, []int{2, 3})
@@ -147,12 +164,12 @@ func TestContiguous(t *testing.T) {
 	tens := tensor.NewTensor(data, []int{2, 3})
 
 	transposed := tens.Transpose([]int{1, 0})
-	if tensor.IsContiguous(transposed.Shape, transposed.Strides) {
+	if transposed.Contiguous() {
 		t.Fatal("Transpose should not be contiguous")
 	}
 
 	contig := tensor.Contiguous(transposed)
-	if !tensor.IsContiguous(contig.Shape, contig.Strides) {
+	if !contig.Contiguous() {
 		t.Fatal("Contiguous() should return a contiguous tensor")
 	}
 
