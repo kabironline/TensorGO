@@ -1,5 +1,7 @@
 package tensor
 
+import "github.com/kabironline/nanograd/internal/pools"
+
 // Sum returns a new Tensor which is the sum of all elements in the original tensor.
 func (t *Tensor) Sum() *Tensor {
 	total := 0.0
@@ -17,11 +19,12 @@ func (t *Tensor) Sum() *Tensor {
 		gradOut := out.Grad[0] // Gradient from the output tensor
 
 		// Create a gradient tensor full of gradOut
-		grad := make([]float64, TotalSize(t.Shape))
+		grad := pools.GetBuffer(TotalSize(t.Shape))
 		for i := range grad {
 			grad[i] = gradOut
 		}
 		t.AccumulateGrad(grad)
+		pools.PutBuffer(grad)
 	}
 	return out
 }
@@ -42,11 +45,12 @@ func (t *Tensor) Mean() *Tensor {
 		gradOut := out.Grad[0] // Gradient from the output tensor
 		gradPerElement := gradOut / float64(TotalSize(t.Shape))
 
-		grad := make([]float64, TotalSize(t.Shape))
+		grad := pools.GetBuffer(TotalSize(t.Shape))
 		for i := range grad {
 			grad[i] = gradPerElement
 		}
 		t.AccumulateGrad(grad)
+		pools.PutBuffer(grad)
 	}
 	return out
 }
@@ -92,8 +96,8 @@ func sumAcrossDimension(data []float64, shape []int, dim int) []float64 {
 	outSize := TotalSize(outShape)
 	outData := make([]float64, outSize)
 
-	strides := defaultStrides(shape)
-	outStrides := defaultStrides(outShape)
+	strides := computeStrides(shape)
+	outStrides := computeStrides(outShape)
 
 	// Iterate over the input data
 	for i, val := range data {

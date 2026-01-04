@@ -89,7 +89,7 @@ func BenchmarkXORTraining(b *testing.B) {
 		nn.NewLinear(8, 1),
 		&activations.Sigmoid{},
 	)
-	optimizer := optim.NewSGD(model.Parameters(), 0.01)
+	optimizer := optim.NewAdam(model.Parameters(), 0.01)
 	b.ResetTimer()
 	for b.Loop() {
 		optimizer.ZeroGrad()

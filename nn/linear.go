@@ -29,7 +29,7 @@ func NewLinear(inFeatures, outFeatures int) *Linear {
 }
 
 func (l *Linear) Forward(x *tensor.Tensor) *tensor.Tensor {
-	return x.MatMul(l.Weight).Add(l.Bias)
+	return x.MatMulAddBias(l.Weight, l.Bias)
 }
 
 func (l *Linear) Parameters() []*tensor.Tensor {

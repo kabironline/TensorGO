@@ -3,25 +3,30 @@ package tensor
 import (
 	"math"
 	"math/rand"
+
+	"gonum.org/v1/gonum/floats"
 )
 
 type Tensor struct {
 	Data    []float64
+	Grad    []float64
 	Shape   []int
 	Strides []int
-	Offset  int // Starting point in the Data slice
-	Grad    []float64
 	Parents []*Tensor // Tensors that were used to compute this tensor
 
 	Backward func() // Function to compute gradients during backpropagation
+	Offset   int    // Starting point in the Data slice
+
+	contiguous bool
 }
 
 func NewTensor(data []float64, shape []int, parents ...*Tensor) *Tensor {
+
 	return &Tensor{
 		Data:    data,
 		Shape:   shape,
-		Strides: defaultStrides(shape),
-		Grad:    make([]float64, len(data)),
+		Strides: computeStrides(shape),
+		Grad:    data,
 		Parents: parents,
 	}
 }
@@ -41,7 +46,7 @@ func NewIdentityTensor(size int) *Tensor {
 }
 
 // Helper to calculate strides for row-major order
-func defaultStrides(shape []int) []int {
+func computeStrides(shape []int) []int {
 	strides := make([]int, len(shape))
 	s := 1
 	for i := len(shape) - 1; i >= 0; i-- {
@@ -106,20 +111,23 @@ func (t *Tensor) AccumulateGrad(grad []float64) {
 		panic("AccumulateGrad: gradient size does not match tensor shape")
 	}
 
-	// Optimization for contiguous tensors
+	// Fast path: contiguous tensors use SIMD
 	if IsContiguous(t.Shape, t.Strides) && t.Offset == 0 {
-		for i, g := range grad {
-			t.Grad[i] += g
+		floats.Add(t.Grad, grad)
+		return
+	}
+
+	// Medium-fast path: aligned gradients
+	if len(grad) == len(t.Grad) && t.Offset == 0 {
+		for i := range grad {
+			t.Grad[i] += grad[i]
 		}
 		return
 	}
 
 	// Slow path for views
-	// The input 'grad' is assumed to be contiguous and row-major, so we use default strides for it.
-	gradStrides := defaultStrides(t.Shape)
 	for i, g := range grad {
-		coords := CoordsFromLinearIndex(i, t.Shape, gradStrides)
-		physicalIdx := LinearIndexFromCoords(coords, t.Shape, t.Strides) + t.Offset
+		physicalIdx := PhysicalIndexFromLinearIndex(i, t.Shape, t.Strides, t.Offset)
 		t.Grad[physicalIdx] += g
 	}
 }

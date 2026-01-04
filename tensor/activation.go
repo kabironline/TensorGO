@@ -1,23 +1,64 @@
 package tensor
 
-import "math"
+import (
+	"math"
+
+	"github.com/kabironline/nanograd/internal/pools"
+)
 
 func (t *Tensor) ReLU() *Tensor {
 	tContig := Contiguous(t)
 	result := make([]float64, len(tContig.Data))
-	for i, v := range tContig.Data {
-		result[i] = max(0, v)
+
+	// Parallelize the forward pass
+	numWorkers := 8
+	chunk := (len(tContig.Data) + numWorkers - 1) / numWorkers
+	done := make(chan struct{}, numWorkers)
+	for w := 0; w < numWorkers; w++ {
+		start := w * chunk
+		end := start + chunk
+		if end > len(tContig.Data) {
+			end = len(tContig.Data)
+		}
+		go func(start, end int) {
+			for i := start; i < end; i++ {
+				result[i] = max(0, tContig.Data[i])
+			}
+			done <- struct{}{}
+		}(start, end)
 	}
+	for w := 0; w < numWorkers; w++ {
+		<-done
+	}
+
 	out := NewTensor(result, append([]int{}, t.Shape...), t)
 	out.Backward = func() {
-		grad := make([]float64, len(out.Grad))
-		for i, v := range out.Data {
-			if v > 0 {
-				// Gradient flows only where ReLU is active
-				grad[i] = out.Grad[i]
+		grad := pools.GetZeroedBuffer(len(out.Grad))
+		// Parallelize the backward pass
+		numWorkers := 8
+		chunk := (len(out.Data) + numWorkers - 1) / numWorkers
+		done := make(chan struct{}, numWorkers)
+		for w := 0; w < numWorkers; w++ {
+			start := w * chunk
+			end := start + chunk
+			if end > len(out.Data) {
+				end = len(out.Data)
 			}
+			go func(start, end int) {
+				for i := start; i < end; i++ {
+					if out.Data[i] > 0 {
+						// Gradient flows only where ReLU is active
+						grad[i] = out.Grad[i]
+					}
+				}
+				done <- struct{}{}
+			}(start, end)
+		}
+		for w := 0; w < numWorkers; w++ {
+			<-done
 		}
 		t.AccumulateGrad(grad)
+		pools.PutBuffer(grad)
 	}
 	return out
 }
@@ -31,12 +72,13 @@ func (t *Tensor) Sigmoid() *Tensor {
 
 	out := NewTensor(result, append([]int{}, t.Shape...), t)
 	out.Backward = func() {
-		grad := make([]float64, len(out.Grad))
+		grad := pools.GetZeroedBuffer(len(out.Grad))
 		for i, v := range out.Data {
 			// Gradient of sigmoid: s * (1 - s)
 			grad[i] = out.Grad[i] * (v * (1 - v))
 		}
 		t.AccumulateGrad(grad)
+		pools.PutBuffer(grad)
 	}
 	return out
 }
@@ -49,12 +91,13 @@ func (t *Tensor) Tanh() *Tensor {
 	}
 	out := NewTensor(result, append([]int{}, t.Shape...), t)
 	out.Backward = func() {
-		grad := make([]float64, len(out.Grad))
+		grad := pools.GetZeroedBuffer(len(out.Grad))
 		for i, v := range out.Data {
 			// Gradient of tanh: 1 - tanh^2(x)
 			grad[i] = out.Grad[i] * (1 - v*v)
 		}
 		t.AccumulateGrad(grad)
+		pools.PutBuffer(grad)
 	}
 	return out
 }
@@ -101,8 +144,7 @@ func (t *Tensor) Softmax() *Tensor {
 
 	out := NewTensor(result, append([]int{}, t.Shape...), t)
 	out.Backward = func() {
-		gradInput := make([]float64, len(out.Grad))
-
+		gradInput := pools.GetZeroedBuffer(len(out.Grad))
 		for r := 0; r < rows; r++ {
 			offset := r * cols
 			// Compute sum(y_k * grad_k) for this row
@@ -119,6 +161,7 @@ func (t *Tensor) Softmax() *Tensor {
 			}
 		}
 		t.AccumulateGrad(gradInput)
+		pools.PutBuffer(gradInput)
 	}
 	return out
 }

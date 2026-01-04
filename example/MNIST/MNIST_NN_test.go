@@ -36,8 +36,7 @@ func prepareImage(img []uint8) []float32 {
 func TestMNIST(t *testing.T) {
 	trainData, testData := loadMNISTData(t)
 
-	// Use a subset of training data (10,000 samples) for faster training while maintaining accuracy
-	numTrainSamples := min(50000, len(trainData.Images))
+	numTrainSamples := len(trainData.Images)
 	trainInputs := make([]float64, numTrainSamples*28*28)
 	trainTargets := make([]float64, numTrainSamples*10)
 

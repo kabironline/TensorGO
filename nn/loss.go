@@ -6,6 +6,7 @@ package nn
 import (
 	"math"
 
+	"github.com/kabironline/nanograd/internal/pools"
 	"github.com/kabironline/nanograd/tensor"
 )
 
@@ -37,18 +38,20 @@ func MSELoss(predictions, targets *tensor.Tensor) *tensor.Tensor {
 		n := float64(len(lossData))
 
 		// Gradients for predictions
-		gradP := make([]float64, len(lossData))
+		gradP := pools.GetBuffer(len(lossData))
 		for i := range gradP {
 			gradP[i] = 2 * (pContig.Data[i] - tContig.Data[i]) / n
 		}
 		predictions.AccumulateGrad(gradP)
+		pools.PutBuffer(gradP)
 
 		// Gradients for targets
-		gradT := make([]float64, len(lossData))
+		gradT := pools.GetBuffer(len(lossData))
 		for i := range gradT {
 			gradT[i] = -gradP[i]
 		}
 		targets.AccumulateGrad(gradT)
+		pools.PutBuffer(gradT)
 	}
 	return out
 }
@@ -80,8 +83,8 @@ func CrossEntropyLoss(predictions, targets *tensor.Tensor) *tensor.Tensor {
 	out.Backward = func() {
 		scale := 1.0 / float64(batchSize)
 
-		gradP := make([]float64, len(pContig.Data))
-		gradT := make([]float64, len(tContig.Data))
+		gradP := pools.GetBuffer(len(pContig.Data))
+		gradT := pools.GetBuffer(len(tContig.Data))
 
 		for i := range pContig.Data {
 			grad := -tContig.Data[i] / (pContig.Data[i] + 1e-15)
@@ -91,6 +94,8 @@ func CrossEntropyLoss(predictions, targets *tensor.Tensor) *tensor.Tensor {
 
 		predictions.AccumulateGrad(gradP)
 		targets.AccumulateGrad(gradT)
+		pools.PutBuffer(gradP)
+		pools.PutBuffer(gradT)
 	}
 	return out
 

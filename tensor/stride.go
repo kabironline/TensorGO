@@ -106,7 +106,7 @@ func Contiguous(t *Tensor) *Tensor {
 	return &Tensor{
 		Data:    newData,
 		Shape:   append([]int{}, shape...),
-		Strides: defaultStrides(shape),
+		Strides: computeStrides(shape),
 		Grad:    make([]float64, totalSize),
 	}
 }
