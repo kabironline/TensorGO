@@ -2,6 +2,8 @@ package tensor
 
 import (
 	"github.com/kabironline/nanograd/internal/pools"
+	"gonum.org/v1/gonum/blas"
+	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
 )
@@ -139,45 +141,80 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 		panic("Incompatible shapes for matrix multiplication")
 	}
 
-	// Ensure inputs are contiguous for Gonum; if already contiguous, this is a no-op.
-	aContig := Contiguous(a)
-	bContig := Contiguous(b)
-
-	mA := mat.NewDense(aContig.Shape[0], aContig.Shape[1], aContig.Data)
-	mB := mat.NewDense(bContig.Shape[0], bContig.Shape[1], bContig.Data)
-
-	m, p := aContig.Shape[0], bContig.Shape[1]
+	m, p := a.Shape[0], b.Shape[1]
 	resultData := pools.GetBuffer(m * p)
-	mC := mat.NewDense(m, p, resultData)
-
-	// Optimized BLAS call
-	mC.Mul(mA, mB)
 
 	out := NewTensor(resultData, []int{m, p}, a, b)
+	blas64.Gemm(
+		blas.NoTrans, blas.NoTrans,
+		1.0,
+		blas64.General{
+			Rows:   a.Shape[0],
+			Cols:   a.Shape[1],
+			Stride: a.Shape[1],
+			Data:   a.Data,
+		},
+		blas64.General{
+			Rows:   b.Shape[0],
+			Cols:   b.Shape[1],
+			Stride: b.Shape[1],
+			Data:   b.Data,
+		},
+		0.0,
+		blas64.General{
+			Rows:   m,
+			Cols:   p,
+			Stride: p,
+			Data:   out.Data,
+		},
+	)
+
 	pools.PutBuffer(resultData)
 
 	// --- AUTOGRAD LOGIC START ---
 	out.Backward = func() {
-		// Wrap gradients and data in Gonum Dense views.
-		// .T() is a zero-copy metadata operation in Gonum.
-		mGradOut := mat.NewDense(out.Shape[0], out.Shape[1], out.Grad)
-		mAC := mat.NewDense(aContig.Shape[0], aContig.Shape[1], aContig.Data)
-		mBC := mat.NewDense(bContig.Shape[0], bContig.Shape[1], bContig.Data)
+		// Wrap gradients and data in blas64 views for optimal BLAS performance.
+		mGradOut := blas64.General{
+			Rows:   out.Shape[0],
+			Cols:   out.Shape[1],
+			Stride: out.Shape[1],
+			Data:   out.Grad,
+		}
+		mA := blas64.General{
+			Rows:   a.Shape[0],
+			Cols:   a.Shape[1],
+			Stride: a.Shape[1],
+			Data:   a.Data,
+		}
+		mB := blas64.General{
+			Rows:   b.Shape[0],
+			Cols:   b.Shape[1],
+			Stride: b.Shape[1],
+			Data:   b.Data,
+		}
 
 		// 1. Grad A = GradOut * B^T
-		// Avoids the expensive Transpose() + Contiguous() copy cycle.
-		gradAData := pools.GetBuffer(aContig.Shape[0] * aContig.Shape[1])
-		mGradA := mat.NewDense(aContig.Shape[0], aContig.Shape[1], gradAData)
-		mGradA.Mul(mGradOut, mBC.T())
-		// Use AccumulateGrad which will allocate lazy gradients as needed.
-		a.AccumulateGrad(mGradA.RawMatrix().Data)
+		gradAData := pools.GetBuffer(a.Shape[0] * a.Shape[1])
+		mGradA := blas64.General{
+			Rows:   a.Shape[0],
+			Cols:   a.Shape[1],
+			Stride: a.Shape[1],
+			Data:   gradAData,
+		}
+		blas64.Gemm(blas.NoTrans, blas.Trans, 1.0, mGradOut, mB, 0.0, mGradA)
+		a.AccumulateGrad(mGradA.Data)
 		pools.PutBuffer(gradAData)
 
 		// 2. Grad B = A^T * GradOut
-		gradBData := pools.GetBuffer(bContig.Shape[0] * bContig.Shape[1])
-		mGradB := mat.NewDense(bContig.Shape[0], bContig.Shape[1], gradBData)
-		mGradB.Mul(mAC.T(), mGradOut)
-		b.AccumulateGrad(mGradB.RawMatrix().Data)
+		gradBData := pools.GetBuffer(b.Shape[0] * b.Shape[1])
+		mGradB := blas64.General{
+			Rows:   b.Shape[0],
+			Cols:   b.Shape[1],
+			Stride: b.Shape[1],
+			Data:   gradBData,
+		}
+		blas64.Gemm(blas.Trans, blas.NoTrans, 1.0, mA, mGradOut, 0.0, mGradB)
+		b.AccumulateGrad(mGradB.Data)
 		pools.PutBuffer(gradBData)
 	}
 	// --- AUTOGRAD LOGIC END ---
@@ -195,92 +232,111 @@ func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
 	if t.Shape[1] != b.Shape[0] {
 		panic("MatMulAddBias: shapes of t and b not compatible for matmul")
 	}
-	m, n := t.Shape[0], t.Shape[1]
-	p := b.Shape[1]
 
-	// Ensure contiguity for Gonum
-	tContig := Contiguous(t)
-	bContig := Contiguous(b)
-
-	mT := mat.NewDense(tContig.Shape[0], tContig.Shape[1], tContig.Data)
-	mB := mat.NewDense(bContig.Shape[0], bContig.Shape[1], bContig.Data)
-
+	m, p := t.Shape[0], b.Shape[1]
 	resultData := pools.GetBuffer(m * p)
-	mOut := mat.NewDense(m, p, resultData)
-	mOut.Mul(mT, mB)
-
-	// Add bias c (broadcast over rows)
-	// c can be shape (p,), (1, p), or (p)
-	var bias []float64
-	if len(c.Shape) == 1 && c.Shape[0] == p {
-		bias = c.Data
-	} else if len(c.Shape) == 2 && c.Shape[0] == 1 && c.Shape[1] == p {
-		bias = c.Data
-	} else if len(c.Shape) == 0 && p == 1 {
-		bias = c.Data
-	} else {
-		panic("MatMulAddBias: bias shape not compatible")
-	}
-	for i := range m {
-		for j := range p {
-			mOut.Set(i, j, mOut.At(i, j)+bias[j])
-		}
-	}
 
 	out := NewTensor(resultData, []int{m, p}, t, b, c)
+	blas64.Gemm(
+		blas.NoTrans, blas.NoTrans,
+		1.0,
+		blas64.General{
+			Rows:   t.Shape[0],
+			Cols:   t.Shape[1],
+			Stride: t.Shape[1],
+			Data:   t.Data,
+		},
+		blas64.General{
+			Rows:   b.Shape[0],
+			Cols:   b.Shape[1],
+			Stride: b.Shape[1],
+			Data:   b.Data,
+		},
+		0.0,
+		blas64.General{
+			Rows:   m,
+			Cols:   p,
+			Stride: p,
+			Data:   out.Data,
+		},
+	)
+
+	// Add bias c (broadcast over rows)
+	for row := range m {
+		blas64.Axpy(1.0, blas64.Vector{
+			N:    p,
+			Inc:  1,
+			Data: c.Data,
+		}, blas64.Vector{
+			N:    p,
+			Inc:  1,
+			Data: out.Data[row*p : (row+1)*p],
+		})
+	}
+
 	pools.PutBuffer(resultData)
 
 	// --- AUTOGRAD LOGIC START ---
 	out.Backward = func() {
-		// out.Grad: shape (m, p)
-		mGradOut := mat.NewDense(m, p, out.Grad)
-		mT := mat.NewDense(tContig.Shape[0], tContig.Shape[1], tContig.Data)
-		mB := mat.NewDense(bContig.Shape[0], bContig.Shape[1], bContig.Data)
-
-		// 1. Grad t = GradOut * b^T
-		gradTData := pools.GetBuffer(m * n)
-		mGradT := mat.NewDense(m, n, gradTData)
-		mGradT.Mul(mGradOut, mB.T())
-		t.AccumulateGrad(mGradT.RawMatrix().Data)
+		// out = t @ b + c
+		// Grad wrt t: gradT = gradOut @ b^T
+		gradTData := pools.GetBuffer(t.Shape[0] * t.Shape[1])
+		mGradOut := blas64.General{
+			Rows:   out.Shape[0],
+			Cols:   out.Shape[1],
+			Stride: out.Shape[1],
+			Data:   out.Grad,
+		}
+		mB := blas64.General{
+			Rows:   b.Shape[0],
+			Cols:   b.Shape[1],
+			Stride: b.Shape[1],
+			Data:   b.Data,
+		}
+		mGradT := blas64.General{
+			Rows:   t.Shape[0],
+			Cols:   t.Shape[1],
+			Stride: t.Shape[1],
+			Data:   gradTData,
+		}
+		blas64.Gemm(blas.NoTrans, blas.Trans, 1.0, mGradOut, mB, 0.0, mGradT)
+		t.AccumulateGrad(mGradT.Data)
 		pools.PutBuffer(gradTData)
 
-		// 2. Grad b = t^T * GradOut
-		gradBData := pools.GetBuffer(n * p)
-		mGradB := mat.NewDense(n, p, gradBData)
-		mGradB.Mul(mT.T(), mGradOut)
-		b.AccumulateGrad(mGradB.RawMatrix().Data)
+		// Grad wrt b: gradB = t^T @ gradOut
+		gradBData := pools.GetBuffer(b.Shape[0] * b.Shape[1])
+		mT := blas64.General{
+			Rows:   t.Shape[0],
+			Cols:   t.Shape[1],
+			Stride: t.Shape[1],
+			Data:   t.Data,
+		}
+		mGradB := blas64.General{
+			Rows:   b.Shape[0],
+			Cols:   b.Shape[1],
+			Stride: b.Shape[1],
+			Data:   gradBData,
+		}
+		blas64.Gemm(blas.Trans, blas.NoTrans, 1.0, mT, mGradOut, 0.0, mGradB)
+		b.AccumulateGrad(mGradB.Data)
 		pools.PutBuffer(gradBData)
 
-		// 3. Grad c = sum over rows of GradOut (broadcasted add)
-		gradC := pools.GetBuffer(p)
-		for i := range mGradOut.RawMatrix().Data {
-			row := i / p
-			col := i % p
-			if row < m && col < p {
-				gradC[col] += mGradOut.RawMatrix().Data[i]
+		// Grad wrt c: gradC = sum over rows of gradOut (broadcasted add)
+		gradC := pools.GetBuffer(len(c.Data))
+		for i := range gradC {
+			gradC[i] = 0
+		}
+		m, p := out.Shape[0], out.Shape[1]
+		for row := 0; row < m; row++ {
+			for col := 0; col < p; col++ {
+				gradC[col] += out.Grad[row*p+col]
 			}
 		}
-		// Accumulate into c.Grad, handling broadcast shape
-		// Ensure c has a gradient buffer allocated.
-		c.ensureGrad()
-		if len(c.Shape) == 1 && c.Shape[0] == p {
-			for j := range gradC {
-				c.Grad[j] += gradC[j]
-			}
-		} else if len(c.Shape) == 2 && c.Shape[0] == 1 && c.Shape[1] == p {
-			for j := range gradC {
-				c.Grad[j] += gradC[j]
-			}
-		} else if len(c.Shape) == 0 && p == 1 {
-			c.Grad[0] += gradC[0]
-		} else {
-			panic("MatMulAddBias: bias shape not compatible in backward")
-		}
+		c.AccumulateGrad(gradC)
 		pools.PutBuffer(gradC)
 	}
-	// --- AUTOGRAD LOGIC END ---
-
 	return out
+
 }
 
 // MatVecMul performs matrix-vector multiplication.
