@@ -1,6 +1,10 @@
 package tensor
 
-import "fmt"
+import (
+	"fmt"
+	"runtime"
+	"sync"
+)
 
 // TotalSize calculates the total number of elements in a tensor given its shape.
 func TotalSize(shape []int) int {
@@ -41,11 +45,13 @@ func (t *Tensor) SetAt(val float64, indices ...int) {
 // PhysicalIndexFromLinearIndex converts a logical flat index to the physical
 // index in the underlying data buffer, accounting for strides and offset.
 func (t *Tensor) PhysicalIndexFromLinearIndex(index int) int {
+	if t.Contiguous() {
+		return t.Offset + index
+	}
 	physicalIndex := t.Offset
 	for i := len(t.Shape) - 1; i >= 0; i-- {
-		dim := t.Shape[i]
-		physicalIndex += (index % dim) * t.Strides[i]
-		index /= dim
+		physicalIndex += (index % t.Shape[i]) * t.Strides[i]
+		index /= t.Shape[i]
 	}
 	return physicalIndex
 }
@@ -58,44 +64,37 @@ func Contiguous(t *Tensor) *Tensor {
 	}
 
 	shape := t.Shape
-	strides := t.Strides
-	rank := len(shape)
 	totalSize := TotalSize(shape)
-
 	newData := make([]float64, totalSize)
-	tData := t.Data
 
-	// Optimized iterator: avoids O(D) work and allocations inside the loop.
-	// It uses an amortized O(1) coordinate update strategy.
-	coords := make([]int, rank)
-	currPos := t.Offset
+	workers := runtime.GOMAXPROCS(0)
+	var wg sync.WaitGroup
+	chunk := (totalSize + workers - 1) / workers
 
-	// Precompute backsteps to avoid multiplication during iteration.
-	backsteps := make([]int, rank)
-	for i := range shape {
-		backsteps[i] = shape[i] * strides[i]
-	}
-
-	for i := range totalSize {
-		newData[i] = tData[currPos]
-
-		// Increment coordinates and update physical position
-		for j := rank - 1; j >= 0; j-- {
-			coords[j]++
-			currPos += strides[j]
-			if coords[j] < shape[j] {
-				break
-			}
-			// Dimension wrap-around
-			currPos -= backsteps[j]
-			coords[j] = 0
+	for w := 0; w < workers; w++ {
+		start := w * chunk
+		if start >= totalSize {
+			break
 		}
+		end := start + chunk
+		if end > totalSize {
+			end = totalSize
+		}
+
+		wg.Add(1)
+		go func(s, e int) {
+			defer wg.Done()
+			for i := s; i < e; i++ {
+				newData[i] = t.Data[t.PhysicalIndexFromLinearIndex(i)]
+			}
+		}(start, end)
 	}
+	wg.Wait()
 
 	return &Tensor{
 		Data:       newData,
 		Shape:      append([]int{}, shape...),
-		Strides:    computeStrides(shape),
+		Strides:    ComputeStrides(shape),
 		Grad:       nil,
 		contiguous: true,
 	}
