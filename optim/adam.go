@@ -45,6 +45,8 @@ func (a *Adam) Step() {
 	beta2Pow := math.Pow(a.Beta2, float64(a.T))
 	denom1 := 1 - beta1Pow
 	denom2 := 1 - beta2Pow
+	OneMinusBeta1 := 1 - a.Beta1
+	OneMinusBeta2 := 1 - a.Beta2
 
 	// Group parameters by their contiguous data length so we can perform
 	// batched vectorized updates for groups with identical sizes.
@@ -79,8 +81,8 @@ func (a *Adam) Step() {
 			// Vectorized element-wise update over the flat buffers
 			for k := 0; k < n; k++ {
 				g := gBuf[k]
-				m := a.Beta1*mBuf[k] + (1-a.Beta1)*g
-				v := a.Beta2*vBuf[k] + (1-a.Beta2)*g*g
+				m := a.Beta1*mBuf[k] + (OneMinusBeta1)*g
+				v := a.Beta2*vBuf[k] + (OneMinusBeta2)*g*g
 
 				mHat := m / denom1
 				vHat := v / denom2
@@ -118,8 +120,8 @@ func (a *Adam) Step() {
 				vRow := a.V[i]
 				for j := range p.Data {
 					g := p.Grad[j]
-					mRow[j] = a.Beta1*mRow[j] + (1-a.Beta1)*g
-					vRow[j] = a.Beta2*vRow[j] + (1-a.Beta2)*g*g
+					mRow[j] = a.Beta1*mRow[j] + (OneMinusBeta1)*g
+					vRow[j] = a.Beta2*vRow[j] + (OneMinusBeta2)*g*g
 
 					mHat := mRow[j] / denom1
 					vHat := vRow[j] / denom2
