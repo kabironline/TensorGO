@@ -2,19 +2,14 @@ package tensor
 
 import (
 	"github.com/kabironline/nanograd/internal/pools"
-	"gonum.org/v1/gonum/blas"
-	"gonum.org/v1/gonum/blas/blas64"
-	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
 )
 
 // Add performs element-wise addition between two tensors.
-// Optimized with a fast-path for identical shapes using Gonum SIMD and minimizing reduction overhead.
 func (a *Tensor) Add(b *Tensor) *Tensor {
-	// Fast path: Identical shapes avoid broadcasting logic and use SIMD.
+	// Simple path if shapes match
 	if sameShape(a.Shape, b.Shape) {
-		res := pools.GetBuffer(len(a.Data))
-		floats.AddTo(res, a.Data, b.Data)
+		res := a.Device.Add(a.Data, b.Data, len(a.Data))
 		out := NewTensor(res, a.Shape, a, b)
 		out.Backward = func() {
 			a.AccumulateGrad(out.Grad)
@@ -31,13 +26,13 @@ func (a *Tensor) Add(b *Tensor) *Tensor {
 		if sameShape(out.Shape, a.Shape) {
 			a.AccumulateGrad(out.Grad)
 		} else {
-			a.AccumulateGrad(ReduceSumTo(out.Grad, out.Shape, a.Shape))
+			a.AccumulateGrad(ReduceSumTo(a.Device, out.Grad, out.Shape, a.Shape))
 		}
 
 		if sameShape(out.Shape, b.Shape) {
 			b.AccumulateGrad(out.Grad)
 		} else {
-			b.AccumulateGrad(ReduceSumTo(out.Grad, out.Shape, b.Shape))
+			b.AccumulateGrad(ReduceSumTo(b.Device, out.Grad, out.Shape, b.Shape))
 		}
 	}
 	return out
@@ -63,17 +58,13 @@ func (a *Tensor) Sub(b *Tensor) *Tensor {
 	out.Parents = []*Tensor{a, b}
 
 	out.Backward = func() {
-		gradA := ReduceSumTo(out.Grad, out.Shape, a.Shape)
+		gradA := ReduceSumTo(a.Device, out.Grad, out.Shape, a.Shape)
 		a.AccumulateGrad(gradA)
 
 		// gradB = -1 * out.Grad
-		negGrad := pools.GetBuffer(len(out.Grad))
-		for i, v := range out.Grad {
-			negGrad[i] = -v
-		}
-		gradB := ReduceSumTo(negGrad, out.Shape, b.Shape)
+		negGrad := a.Device.MulScalar(out.Grad, -1.0, len(out.Grad))
+		gradB := ReduceSumTo(b.Device, negGrad, out.Shape, b.Shape)
 		b.AccumulateGrad(gradB)
-		pools.PutBuffer(negGrad)
 	}
 	return out
 }
@@ -85,16 +76,16 @@ func (a *Tensor) Mul(b *Tensor) *Tensor {
 	out.Parents = []*Tensor{a, b}
 
 	out.Backward = func() {
-		gradTensor := &Tensor{Data: out.Grad, Shape: out.Shape, Strides: out.Strides}
+		gradTensor := out.ToGradTensor()
 
 		// Grad A = out.Grad * B
 		tempA := BroadcastMulOp(gradTensor, b)
-		gradA := ReduceSumTo(tempA.Data, tempA.Shape, a.Shape)
+		gradA := ReduceSumTo(a.Device, tempA.Data, tempA.Shape, a.Shape)
 		a.AccumulateGrad(gradA)
 
 		// Grad B = out.Grad * A
 		tempB := BroadcastMulOp(gradTensor, a)
-		gradB := ReduceSumTo(tempB.Data, tempB.Shape, b.Shape)
+		gradB := ReduceSumTo(b.Device, tempB.Data, tempB.Shape, b.Shape)
 		b.AccumulateGrad(gradB)
 	}
 	return out
@@ -107,11 +98,11 @@ func (a *Tensor) Div(b *Tensor) *Tensor {
 	out.Parents = []*Tensor{a, b}
 
 	out.Backward = func() {
-		gradTensor := &Tensor{Data: out.Grad, Shape: out.Shape, Strides: out.Strides}
+		gradTensor := out.ToGradTensor()
 
 		// Grad A = out.Grad / B
 		tempA := BroadcastDivOp(gradTensor, b)
-		gradA := ReduceSumTo(tempA.Data, tempA.Shape, a.Shape)
+		gradA := ReduceSumTo(a.Device, tempA.Data, tempA.Shape, a.Shape)
 		a.AccumulateGrad(gradA)
 
 		// Grad B = - (out.Grad * A) / (B * B)
@@ -119,20 +110,14 @@ func (a *Tensor) Div(b *Tensor) *Tensor {
 		temp = BroadcastDivOp(temp, b)
 		temp = BroadcastDivOp(temp, b)
 
-		negData := pools.GetBuffer(len(temp.Data))
-		for i, v := range temp.Data {
-			negData[i] = -v
-		}
-
-		gradB := ReduceSumTo(negData, temp.Shape, b.Shape)
+		negData := a.Device.MulScalar(temp.Data, -1.0, len(temp.Data))
+		gradB := ReduceSumTo(b.Device, negData, temp.Shape, b.Shape)
 		b.AccumulateGrad(gradB)
-		pools.PutBuffer(negData)
 	}
 	return out
 }
 
 // MatMul performs matrix multiplication between two 2D tensors.
-// It ensures both tensors are contiguous before calling Gonum's BLAS-optimized Mul.
 func (a *Tensor) MatMul(b *Tensor) *Tensor {
 	if len(a.Shape) != 2 || len(b.Shape) != 2 {
 		panic("MatMul only supports 2D matrices")
@@ -141,206 +126,30 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 		panic("Incompatible shapes for matrix multiplication")
 	}
 
-	m, p := a.Shape[0], b.Shape[1]
-	resultData := pools.GetBuffer(m * p)
+	m, k, n := a.Shape[0], a.Shape[1], b.Shape[1]
+	resultData := a.Device.MatMul(a.Data, b.Data, m, n, k, a.Strides[0], b.Strides[0])
 
-	out := NewTensor(resultData, []int{m, p}, a, b)
-	blas64.Gemm(
-		blas.NoTrans, blas.NoTrans,
-		1.0,
-		blas64.General{
-			Rows:   a.Shape[0],
-			Cols:   a.Shape[1],
-			Stride: a.Shape[1],
-			Data:   a.Data,
-		},
-		blas64.General{
-			Rows:   b.Shape[0],
-			Cols:   b.Shape[1],
-			Stride: b.Shape[1],
-			Data:   b.Data,
-		},
-		0.0,
-		blas64.General{
-			Rows:   m,
-			Cols:   p,
-			Stride: p,
-			Data:   out.Data,
-		},
-	)
+	out := NewTensor(resultData, []int{m, n}, a, b)
 
-	pools.PutBuffer(resultData)
-
-	// --- AUTOGRAD LOGIC START ---
 	out.Backward = func() {
-		// Wrap gradients and data in blas64 views for optimal BLAS performance.
-		mGradOut := blas64.General{
-			Rows:   out.Shape[0],
-			Cols:   out.Shape[1],
-			Stride: out.Shape[1],
-			Data:   out.Grad,
-		}
-		mA := blas64.General{
-			Rows:   a.Shape[0],
-			Cols:   a.Shape[1],
-			Stride: a.Shape[1],
-			Data:   a.Data,
-		}
-		mB := blas64.General{
-			Rows:   b.Shape[0],
-			Cols:   b.Shape[1],
-			Stride: b.Shape[1],
-			Data:   b.Data,
-		}
+		// gradA = gradOut @ b^T
+		gradA := out.Device.MatMulTransB(out.Grad, b.Data, m, k, n, out.Strides[0], b.Strides[0])
+		a.AccumulateGrad(gradA)
 
-		// 1. Grad A = GradOut * B^T
-		gradAData := pools.GetBuffer(a.Shape[0] * a.Shape[1])
-		mGradA := blas64.General{
-			Rows:   a.Shape[0],
-			Cols:   a.Shape[1],
-			Stride: a.Shape[1],
-			Data:   gradAData,
-		}
-		blas64.Gemm(blas.NoTrans, blas.Trans, 1.0, mGradOut, mB, 0.0, mGradA)
-		a.AccumulateGrad(mGradA.Data)
-		pools.PutBuffer(gradAData)
-
-		// 2. Grad B = A^T * GradOut
-		gradBData := pools.GetBuffer(b.Shape[0] * b.Shape[1])
-		mGradB := blas64.General{
-			Rows:   b.Shape[0],
-			Cols:   b.Shape[1],
-			Stride: b.Shape[1],
-			Data:   gradBData,
-		}
-		blas64.Gemm(blas.Trans, blas.NoTrans, 1.0, mA, mGradOut, 0.0, mGradB)
-		b.AccumulateGrad(mGradB.Data)
-		pools.PutBuffer(gradBData)
+		// gradB = a^T @ gradOut
+		gradB := out.Device.MatMulTransA(a.Data, out.Grad, k, n, m, a.Strides[0], out.Strides[0])
+		b.AccumulateGrad(gradB)
 	}
-	// --- AUTOGRAD LOGIC END ---
 
 	return out
 }
 
 // MatMulAddBias performs matrix multiplication of tensor t with b and adds bias c.
-// It leverages optimized Gonum paths and supports autograd.
 func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
-	// t: (m, n), b: (n, p), c: (p,) or (1, p) or (p)
-	if len(t.Shape) != 2 || len(b.Shape) != 2 {
-		panic("MatMulAddBias: t and b must be 2D tensors")
-	}
-	if t.Shape[1] != b.Shape[0] {
-		panic("MatMulAddBias: shapes of t and b not compatible for matmul")
-	}
-
-	m, p := t.Shape[0], b.Shape[1]
-	resultData := pools.GetBuffer(m * p)
-
-	out := NewTensor(resultData, []int{m, p}, t, b, c)
-	blas64.Gemm(
-		blas.NoTrans, blas.NoTrans,
-		1.0,
-		blas64.General{
-			Rows:   t.Shape[0],
-			Cols:   t.Shape[1],
-			Stride: t.Shape[1],
-			Data:   t.Data,
-		},
-		blas64.General{
-			Rows:   b.Shape[0],
-			Cols:   b.Shape[1],
-			Stride: b.Shape[1],
-			Data:   b.Data,
-		},
-		0.0,
-		blas64.General{
-			Rows:   m,
-			Cols:   p,
-			Stride: p,
-			Data:   out.Data,
-		},
-	)
-
-	// Add bias c (broadcast over rows)
-	for row := range m {
-		blas64.Axpy(1.0, blas64.Vector{
-			N:    p,
-			Inc:  1,
-			Data: c.Data,
-		}, blas64.Vector{
-			N:    p,
-			Inc:  1,
-			Data: out.Data[row*p : (row+1)*p],
-		})
-	}
-
-	pools.PutBuffer(resultData)
-
-	// --- AUTOGRAD LOGIC START ---
-	out.Backward = func() {
-		// out = t @ b + c
-		// Grad wrt t: gradT = gradOut @ b^T
-		gradTData := pools.GetBuffer(t.Shape[0] * t.Shape[1])
-		mGradOut := blas64.General{
-			Rows:   out.Shape[0],
-			Cols:   out.Shape[1],
-			Stride: out.Shape[1],
-			Data:   out.Grad,
-		}
-		mB := blas64.General{
-			Rows:   b.Shape[0],
-			Cols:   b.Shape[1],
-			Stride: b.Shape[1],
-			Data:   b.Data,
-		}
-		mGradT := blas64.General{
-			Rows:   t.Shape[0],
-			Cols:   t.Shape[1],
-			Stride: t.Shape[1],
-			Data:   gradTData,
-		}
-		blas64.Gemm(blas.NoTrans, blas.Trans, 1.0, mGradOut, mB, 0.0, mGradT)
-		t.AccumulateGrad(mGradT.Data)
-		pools.PutBuffer(gradTData)
-
-		// Grad wrt b: gradB = t^T @ gradOut
-		gradBData := pools.GetBuffer(b.Shape[0] * b.Shape[1])
-		mT := blas64.General{
-			Rows:   t.Shape[0],
-			Cols:   t.Shape[1],
-			Stride: t.Shape[1],
-			Data:   t.Data,
-		}
-		mGradB := blas64.General{
-			Rows:   b.Shape[0],
-			Cols:   b.Shape[1],
-			Stride: b.Shape[1],
-			Data:   gradBData,
-		}
-		blas64.Gemm(blas.Trans, blas.NoTrans, 1.0, mT, mGradOut, 0.0, mGradB)
-		b.AccumulateGrad(mGradB.Data)
-		pools.PutBuffer(gradBData)
-
-		// Grad wrt c: gradC = sum over rows of gradOut (broadcasted add)
-		gradC := pools.GetBuffer(len(c.Data))
-		for i := range gradC {
-			gradC[i] = 0
-		}
-		m, p := out.Shape[0], out.Shape[1]
-		for row := 0; row < m; row++ {
-			for col := 0; col < p; col++ {
-				gradC[col] += out.Grad[row*p+col]
-			}
-		}
-		c.AccumulateGrad(gradC)
-		pools.PutBuffer(gradC)
-	}
-	return out
-
+	return t.MatMul(b).Add(c)
 }
 
 // MatVecMul performs matrix-vector multiplication.
-// It ensures contiguity to use optimized Gonum paths.
 func (a *Tensor) MatVecMul(b *Tensor) *Tensor {
 	if len(a.Shape) != 2 || len(b.Shape) != 1 {
 		panic("MatVecMul requires a 2D matrix and a 1D vector")
@@ -349,50 +158,17 @@ func (a *Tensor) MatVecMul(b *Tensor) *Tensor {
 		panic("Incompatible shapes for matrix-vector multiplication")
 	}
 
-	aContig := Contiguous(a)
-	bContig := Contiguous(b)
-
-	mA := mat.NewDense(aContig.Shape[0], aContig.Shape[1], aContig.Data)
-	vB := mat.NewVecDense(bContig.Shape[0], bContig.Data)
-
-	resultData := pools.GetBuffer(aContig.Shape[0])
-	vC := mat.NewVecDense(aContig.Shape[0], resultData)
-	vC.MulVec(mA, vB)
-
-	out := NewTensor(resultData, []int{aContig.Shape[0]}, a, b)
-	pools.PutBuffer(resultData)
-
-	// --- AUTOGRAD LOGIC START ---
-	out.Backward = func() {
-		// Wrap for Gonum
-		mGradOut := mat.NewVecDense(out.Shape[0], out.Grad)
-		vB := mat.NewVecDense(b.Shape[0], b.Data)
-		mA := mat.NewDense(a.Shape[0], a.Shape[1], a.Data)
-
-		// 1. Grad A = GradOut (m x 1) * b^T (1 x n) -> (m x n)
-		// This is an outer product
-		gradAData := pools.GetBuffer(len(a.Data))
-		mGradA := mat.NewDense(a.Shape[0], a.Shape[1], gradAData)
-		mGradA.Outer(1, mGradOut, vB)
-		// Ensure a has a gradient buffer before accumulating directly into it.
-		a.ensureGrad()
-		for i, val := range mGradA.RawMatrix().Data {
-			a.Grad[i] += val
-		}
-		pools.PutBuffer(gradAData)
-
-		// 2. Grad B = a^T * GradOut
-		gradBData := pools.GetBuffer(len(b.Data))
-		vGradB := mat.NewVecDense(b.Shape[0], gradBData)
-		vGradB.MulVec(mA.T(), mGradOut)
-		// Ensure b has a gradient buffer before accumulating directly into it.
-		b.ensureGrad()
-		for i, val := range vGradB.RawVector().Data {
-			b.Grad[i] += val
-		}
-		pools.PutBuffer(gradBData)
+	// Treat vector as (n, 1) matrix
+	b2D := &Tensor{
+		Data:         b.Data,
+		Shape:        []int{b.Shape[0], 1},
+		Strides:      []int{1, 1},
+		Device:       b.Device,
+		RequiresGrad: b.RequiresGrad,
 	}
-	return out
+	res := a.MatMul(b2D)
+	// Flatten result back to 1D
+	return res.Reshape([]int{a.Shape[0]})
 }
 
 // VecMatMul performs vector-matrix multiplication.
@@ -404,73 +180,22 @@ func (a *Tensor) VecMatMul(b *Tensor) *Tensor {
 		panic("Incompatible shapes for vector-matrix multiplication")
 	}
 
-	aContig := Contiguous(a)
-	bContig := Contiguous(b)
-
-	vA := mat.NewVecDense(aContig.Shape[0], aContig.Data)
-	mB := mat.NewDense(bContig.Shape[0], bContig.Shape[1], bContig.Data)
-
-	resultData := pools.GetBuffer(bContig.Shape[1])
-	vC := mat.NewVecDense(bContig.Shape[1], resultData)
-	vC.MulVec(mB.T(), vA)
-
-	out := NewTensor(resultData, []int{bContig.Shape[1]}, a, b)
-	pools.PutBuffer(resultData)
-	// --- AUTOGRAD LOGIC START ---
-
-	out.Backward = func() {
-		vGradOut := mat.NewVecDense(out.Shape[0], out.Grad)
-		vA := mat.NewVecDense(a.Shape[0], a.Data)
-		mB := mat.NewDense(b.Shape[0], b.Shape[1], b.Data)
-
-		// 1. Grad A = GradOut * B^T
-		gradAData := pools.GetBuffer(len(a.Data))
-		vGradA := mat.NewVecDense(a.Shape[0], gradAData)
-		vGradA.MulVec(mB, vGradOut) // MulVec(m, v) is m * v
-		for i, val := range vGradA.RawVector().Data {
-			a.Grad[i] += val
-		}
-		pools.PutBuffer(gradAData)
-
-		// 2. Grad B = a^T (outer) GradOut
-		gradBData := pools.GetBuffer(len(b.Data))
-		mGradB := mat.NewDense(b.Shape[0], b.Shape[1], gradBData)
-		mGradB.Outer(1, vA, vGradOut)
-		for i, val := range mGradB.RawMatrix().Data {
-			b.Grad[i] += val
-		}
-		pools.PutBuffer(gradBData)
+	// Treat vector as (1, m) matrix
+	a2D := &Tensor{
+		Data:         a.Data,
+		Shape:        []int{1, a.Shape[0]},
+		Strides:      []int{a.Shape[0], 1},
+		Device:       a.Device,
+		RequiresGrad: a.RequiresGrad,
 	}
-	return out
+	res := a2D.MatMul(b)
+	// Flatten result back to 1D
+	return res.Reshape([]int{b.Shape[1]})
 }
 
 // Dot performs the dot product between two 1D tensors.
 func (a *Tensor) Dot(b *Tensor) *Tensor {
-	if len(a.Shape) != 1 || len(b.Shape) != 1 {
-		panic("Dot requires two 1D vectors")
-	}
-	if a.Shape[0] != b.Shape[0] {
-		panic("Incompatible shapes for dot product")
-	}
-
-	aContig := Contiguous(a)
-	bContig := Contiguous(b)
-
-	vA := mat.NewVecDense(aContig.Shape[0], aContig.Data)
-	vB := mat.NewVecDense(bContig.Shape[0], bContig.Data)
-	result := mat.Dot(vA, vB)
-
-	out := NewTensor([]float64{result}, []int{}, a, b)
-	// --- AUTOGRAD LOGIC START ---
-	out.Backward = func() {
-		// Grad of Dot product: gradA = gradOut * b, gradB = gradOut * a
-		gradOutScalar := out.Grad[0]
-		for i := range a.Grad {
-			a.Grad[i] += gradOutScalar * b.Data[i]
-			b.Grad[i] += gradOutScalar * a.Data[i]
-		}
-	}
-	return out
+	return (a.Mul(b)).Sum()
 }
 
 // Inverse computes the inverse of a square 2D tensor (matrix).
@@ -571,9 +296,12 @@ func (t *Tensor) Slice(starts, ends []int) *Tensor {
 	}
 
 	out := &Tensor{
-		Data:    t.Data[offset:], // view starts at offset
-		Shape:   newShape,
-		Strides: strides,
+		Data:         t.Data[offset:], // view starts at offset
+		Shape:        newShape,
+		Strides:      strides,
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Offset:       t.Offset + offset,
 	}
 	out.Parents = []*Tensor{t}
 

@@ -20,8 +20,30 @@ type Backend interface {
 	ElementWiseOps
 	MatrixOps
 	ReductionOps
+	AxisReductionOps
 	ConvOps
 	PoolOps
+
+	// Common neural network operations
+	ActivationOps
+	SoftmaxOps
+	BroadcastOps
+	UtilityOps
+	RandomOps
+	OptimizerOps
+}
+
+type OptimizerOps interface {
+	// StepSGD performs a single step of SGD update: data -= lr * grad
+	StepSGD(data, grad []float64, lr float64)
+
+	// StepAdam performs a single step of Adam update
+	StepAdam(data, grad, m, v []float64, lr, beta1, beta2, eps float64, t int)
+}
+
+type RandomOps interface {
+	// Normal fills the buffer with normal distribution values
+	Normal(data []float64, mean, stdDev float64, size int)
 }
 
 type ConvOps interface {
@@ -186,6 +208,15 @@ type ActivationOps interface {
 
 	// TanhBackward computes tanh gradient
 	TanhBackward(grad, output []float64, size int) []float64
+
+	// Exp computes the exponential
+	Exp(a []float64, size int) []float64
+
+	// Log computes the natural logarithm
+	Log(a []float64, size int) []float64
+
+	// Square computes the square
+	Square(a []float64, size int) []float64
 }
 
 // SoftmaxOps is an optional interface for softmax operations

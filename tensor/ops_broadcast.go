@@ -1,9 +1,5 @@
 package tensor
 
-import (
-	"gonum.org/v1/gonum/floats"
-)
-
 // broadcastShapes determines the broadcasted shape of two tensors.
 // It follows NumPy-style broadcasting rules:
 // 1. If ranks differ, prepend 1s to the smaller rank shape.
@@ -47,7 +43,7 @@ func (t *Tensor) BroadcastTo(targetShape []int) *Tensor {
 	newStrides := make([]int, len(targetShape))
 	shift := len(targetShape) - len(t.Shape)
 
-	for i, _ := range targetShape {
+	for i := range targetShape {
 		var origDim, origStride int
 		if i < shift {
 			origDim = 1
@@ -70,17 +66,18 @@ func (t *Tensor) BroadcastTo(targetShape []int) *Tensor {
 	}
 
 	out := &Tensor{
-		Data:    t.Data,
-		Shape:   append([]int(nil), targetShape...),
-		Strides: newStrides,
-		Offset:  t.Offset,
-		// Grad allocated lazily
-		Grad:    nil,
-		Parents: []*Tensor{t},
+		Data:         t.Data,
+		Shape:        append([]int(nil), targetShape...),
+		Strides:      newStrides,
+		Offset:       t.Offset,
+		Grad:         nil,
+		Parents:      []*Tensor{t},
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
 	}
 
 	out.Backward = func() {
-		gradReduced := ReduceSumTo(out.Grad, out.Shape, t.Shape)
+		gradReduced := ReduceSumTo(t.Device, out.Grad, out.Shape, t.Shape)
 		t.AccumulateGrad(gradReduced)
 	}
 
@@ -101,156 +98,48 @@ func shapesEqual(a, b []int) bool {
 }
 
 // BroadcastAddOp performs broadcasted element-wise addition.
-// It uses Gonum's optimized floats.AddTo for contiguous cases and falls back to a stride-aware iterator.
 func BroadcastAddOp(a, b *Tensor) *Tensor {
 	outShape := broadcastShapes(a.Shape, b.Shape)
-	total := TotalSize(outShape)
-	outData := make([]float64, total)
 
-	// Fast path: same shape and contiguous row-major
-	if shapesEqual(a.Shape, b.Shape) && a.Contiguous() && b.Contiguous() && a.Offset == 0 && b.Offset == 0 {
-		floats.AddTo(outData, a.Data, b.Data)
-		return NewTensor(outData, outShape)
-	}
+	// Use the backend's BroadcastAdd
+	// Both inputs must be contiguous or the backend must handle views
+	// For now, we ensure they are contiguous for the backend call
+	aContig := Contiguous(a)
+	bContig := Contiguous(b)
 
-	// Slow path: N-D iterator for broadcasting or non-contiguous views
-	aB := a.BroadcastTo(outShape)
-	bB := b.BroadcastTo(outShape)
-	rank := len(outShape)
-	if rank == 0 {
-		outData[0] = aB.Data[aB.Offset] + bB.Data[bB.Offset]
-		return NewTensor(outData, outShape)
-	}
-
-	coords := make([]int, rank)
-	ai, bi := aB.Offset, bB.Offset
-	for i := range total {
-		outData[i] = aB.Data[ai] + bB.Data[bi]
-		for j := rank - 1; j >= 0; j-- {
-			coords[j]++
-			if coords[j] < outShape[j] {
-				ai += aB.Strides[j]
-				bi += bB.Strides[j]
-				break
-			}
-			ai -= (outShape[j] - 1) * aB.Strides[j]
-			bi -= (outShape[j] - 1) * bB.Strides[j]
-			coords[j] = 0
-		}
-	}
-	return NewTensor(outData, outShape)
+	outData := a.Device.BroadcastAdd(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
+	return NewTensor(outData, outShape, a, b)
 }
 
 // BroadcastSubOp performs broadcasted element-wise subtraction.
 func BroadcastSubOp(a, b *Tensor) *Tensor {
 	outShape := broadcastShapes(a.Shape, b.Shape)
-	total := TotalSize(outShape)
-	outData := make([]float64, total)
 
-	if shapesEqual(a.Shape, b.Shape) && a.Contiguous() && b.Contiguous() && a.Offset == 0 && b.Offset == 0 {
-		floats.SubTo(outData, a.Data, b.Data)
-		return NewTensor(outData, outShape)
-	}
+	aContig := Contiguous(a)
+	bContig := Contiguous(b)
 
-	aB := a.BroadcastTo(outShape)
-	bB := b.BroadcastTo(outShape)
-	rank := len(outShape)
-	if rank == 0 {
-		outData[0] = aB.Data[aB.Offset] - bB.Data[bB.Offset]
-		return NewTensor(outData, outShape)
-	}
-
-	coords := make([]int, rank)
-	ai, bi := aB.Offset, bB.Offset
-	for i := range total {
-		outData[i] = aB.Data[ai] - bB.Data[bi]
-		for j := rank - 1; j >= 0; j-- {
-			coords[j]++
-			if coords[j] < outShape[j] {
-				ai += aB.Strides[j]
-				bi += bB.Strides[j]
-				break
-			}
-			ai -= (outShape[j] - 1) * aB.Strides[j]
-			bi -= (outShape[j] - 1) * bB.Strides[j]
-			coords[j] = 0
-		}
-	}
-	return NewTensor(outData, outShape)
+	outData := a.Device.BroadcastSub(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
+	return NewTensor(outData, outShape, a, b)
 }
 
 // BroadcastMulOp performs broadcasted element-wise multiplication.
 func BroadcastMulOp(a, b *Tensor) *Tensor {
 	outShape := broadcastShapes(a.Shape, b.Shape)
-	total := TotalSize(outShape)
-	outData := make([]float64, total)
 
-	if shapesEqual(a.Shape, b.Shape) && a.Contiguous() && b.Contiguous() && a.Offset == 0 && b.Offset == 0 {
-		floats.MulTo(outData, a.Data, b.Data)
-		return NewTensor(outData, outShape)
-	}
+	aContig := Contiguous(a)
+	bContig := Contiguous(b)
 
-	aB := a.BroadcastTo(outShape)
-	bB := b.BroadcastTo(outShape)
-	rank := len(outShape)
-	if rank == 0 {
-		outData[0] = aB.Data[aB.Offset] * bB.Data[bB.Offset]
-		return NewTensor(outData, outShape)
-	}
-
-	coords := make([]int, rank)
-	ai, bi := aB.Offset, bB.Offset
-	for i := range total {
-		outData[i] = aB.Data[ai] * bB.Data[bi]
-		for j := rank - 1; j >= 0; j-- {
-			coords[j]++
-			if coords[j] < outShape[j] {
-				ai += aB.Strides[j]
-				bi += bB.Strides[j]
-				break
-			}
-			ai -= (outShape[j] - 1) * aB.Strides[j]
-			bi -= (outShape[j] - 1) * bB.Strides[j]
-			coords[j] = 0
-		}
-	}
-	return NewTensor(outData, outShape)
+	outData := a.Device.BroadcastMul(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
+	return NewTensor(outData, outShape, a, b)
 }
 
 // BroadcastDivOp performs broadcasted element-wise division.
 func BroadcastDivOp(a, b *Tensor) *Tensor {
 	outShape := broadcastShapes(a.Shape, b.Shape)
-	total := TotalSize(outShape)
-	outData := make([]float64, total)
 
-	if shapesEqual(a.Shape, b.Shape) && a.Contiguous() && b.Contiguous() && a.Offset == 0 && b.Offset == 0 {
-		floats.DivTo(outData, a.Data, b.Data)
-		return NewTensor(outData, outShape)
-	}
+	aContig := Contiguous(a)
+	bContig := Contiguous(b)
 
-	aB := a.BroadcastTo(outShape)
-	bB := b.BroadcastTo(outShape)
-	rank := len(outShape)
-	if rank == 0 {
-		outData[0] = aB.Data[aB.Offset] / bB.Data[bB.Offset]
-		return NewTensor(outData, outShape)
-	}
-
-	coords := make([]int, rank)
-	ai, bi := aB.Offset, bB.Offset
-	for i := range total {
-		outData[i] = aB.Data[ai] / bB.Data[bi]
-		for j := rank - 1; j >= 0; j-- {
-			coords[j]++
-			if coords[j] < outShape[j] {
-				ai += aB.Strides[j]
-				bi += bB.Strides[j]
-				break
-			}
-			ai -= (outShape[j] - 1) * aB.Strides[j]
-			bi -= (outShape[j] - 1) * bB.Strides[j]
-			coords[j] = 0
-		}
-	}
-	return NewTensor(outData, outShape)
+	outData := a.Device.BroadcastDiv(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
+	return NewTensor(outData, outShape, a, b)
 }

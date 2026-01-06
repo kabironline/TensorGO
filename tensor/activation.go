@@ -1,119 +1,81 @@
 package tensor
 
 import (
-	"math"
-
 	"github.com/kabironline/nanograd/internal/pools"
 )
 
 func (t *Tensor) ReLU() *Tensor {
 	tContig := Contiguous(t)
-	result := make([]float64, len(tContig.Data))
-	// For small tensors, avoid goroutine/channel overhead and compute
-	// sequentially. For larger tensors, use a simple worker fan-out.
-	n := len(tContig.Data)
-	if n < 4096 {
-		for i := 0; i < n; i++ {
-			result[i] = max(0, tContig.Data[i])
-		}
-	} else {
-		numWorkers := 8
-		chunk := (n + numWorkers - 1) / numWorkers
-		done := make(chan struct{}, numWorkers)
-		for w := 0; w < numWorkers; w++ {
-			start := w * chunk
-			end := start + chunk
-			if end > n {
-				end = n
-			}
-			go func(start, end int) {
-				for i := start; i < end; i++ {
-					result[i] = max(0, tContig.Data[i])
-				}
-				done <- struct{}{}
-			}(start, end)
-		}
-		for w := 0; w < numWorkers; w++ {
-			<-done
-		}
-	}
+	result := t.Device.ReLU(tContig.Data, len(tContig.Data))
 
 	out := NewTensor(result, append([]int{}, t.Shape...), t)
 	out.Backward = func() {
-		grad := pools.GetZeroedBuffer(len(out.Grad))
-		// For small tensors, avoid goroutine overhead.
-		if len(out.Data) < 4096 {
-			for i := 0; i < len(out.Data); i++ {
-				if out.Data[i] > 0 {
-					grad[i] = out.Grad[i]
-				}
-			}
-		} else {
-			// Parallelize the backward pass
-			numWorkers := 8
-			chunk := (len(out.Data) + numWorkers - 1) / numWorkers
-			done := make(chan struct{}, numWorkers)
-			for w := 0; w < numWorkers; w++ {
-				start := w * chunk
-				end := start + chunk
-				if end > len(out.Data) {
-					end = len(out.Data)
-				}
-				go func(start, end int) {
-					for i := start; i < end; i++ {
-						if out.Data[i] > 0 {
-							// Gradient flows only where ReLU is active
-							grad[i] = out.Grad[i]
-						}
-					}
-					done <- struct{}{}
-				}(start, end)
-			}
-			for w := 0; w < numWorkers; w++ {
-				<-done
-			}
-		}
+		grad := t.Device.ReLUBackward(out.Grad, tContig.Data, len(out.Grad))
 		t.AccumulateGrad(grad)
-		pools.PutBuffer(grad)
 	}
 	return out
 }
 
 func (t *Tensor) Sigmoid() *Tensor {
 	tContig := Contiguous(t)
-	result := make([]float64, len(tContig.Data))
-	for i, v := range tContig.Data {
-		result[i] = 1 / (1 + math.Exp(-v))
-	}
+	result := t.Device.Sigmoid(tContig.Data, len(tContig.Data))
 
 	out := NewTensor(result, append([]int{}, t.Shape...), t)
 	out.Backward = func() {
-		grad := pools.GetZeroedBuffer(len(out.Grad))
-		for i, v := range out.Data {
-			// Gradient of sigmoid: s * (1 - s)
-			grad[i] = out.Grad[i] * (v * (1 - v))
-		}
+		grad := t.Device.SigmoidBackward(out.Grad, out.Data, len(out.Grad))
 		t.AccumulateGrad(grad)
-		pools.PutBuffer(grad)
 	}
 	return out
 }
 
 func (t *Tensor) Tanh() *Tensor {
 	tContig := Contiguous(t)
-	result := make([]float64, len(tContig.Data))
-	for i, v := range tContig.Data {
-		result[i] = math.Tanh(v)
-	}
+	result := t.Device.Tanh(tContig.Data, len(tContig.Data))
+
 	out := NewTensor(result, append([]int{}, t.Shape...), t)
 	out.Backward = func() {
-		grad := pools.GetZeroedBuffer(len(out.Grad))
-		for i, v := range out.Data {
-			// Gradient of tanh: 1 - tanh^2(x)
-			grad[i] = out.Grad[i] * (1 - v*v)
-		}
+		grad := t.Device.TanhBackward(out.Grad, out.Data, len(out.Grad))
 		t.AccumulateGrad(grad)
-		pools.PutBuffer(grad)
+	}
+	return out
+}
+
+func (t *Tensor) Exp() *Tensor {
+	tContig := Contiguous(t)
+	result := t.Device.Exp(tContig.Data, len(tContig.Data))
+
+	out := NewTensor(result, append([]int{}, t.Shape...), t)
+	out.Backward = func() {
+		// dL/dt = dL/dout * exp(t) = dL/dout * out
+		grad := t.Device.BroadcastMul(out.Grad, out.Data, out.Shape, out.Shape, out.Shape)
+		t.AccumulateGrad(grad)
+	}
+	return out
+}
+
+func (t *Tensor) Log() *Tensor {
+	tContig := Contiguous(t)
+	result := t.Device.Log(tContig.Data, len(tContig.Data))
+
+	out := NewTensor(result, append([]int{}, t.Shape...), t)
+	out.Backward = func() {
+		// dL/dt = dL/dout * (1/t)
+		grad := t.Device.BroadcastDiv(out.Grad, tContig.Data, out.Shape, t.Shape, out.Shape)
+		t.AccumulateGrad(grad)
+	}
+	return out
+}
+
+func (t *Tensor) Square() *Tensor {
+	tContig := Contiguous(t)
+	result := t.Device.Square(tContig.Data, len(tContig.Data))
+
+	out := NewTensor(result, append([]int{}, t.Shape...), t)
+	out.Backward = func() {
+		// dL/dt = dL/dout * 2t
+		grad2t := t.Device.MulScalar(tContig.Data, 2.0, len(tContig.Data))
+		grad := t.Device.BroadcastMul(out.Grad, grad2t, out.Shape, t.Shape, out.Shape)
+		t.AccumulateGrad(grad)
 	}
 	return out
 }
@@ -124,42 +86,17 @@ func (t *Tensor) Softmax() *Tensor {
 	}
 
 	tContig := Contiguous(t)
-
-	rows := 1
-	cols := len(tContig.Data)
-	if len(t.Shape) == 2 {
-		rows = t.Shape[0]
-		cols = t.Shape[1]
-	}
-
-	result := make([]float64, len(tContig.Data))
-
-	for r := 0; r < rows; r++ {
-		offset := r * cols
-		// Find max for numerical stability
-		maxVal := tContig.Data[offset]
-		for c := 1; c < cols; c++ {
-			if tContig.Data[offset+c] > maxVal {
-				maxVal = tContig.Data[offset+c]
-			}
-		}
-
-		// Compute exp and sum
-		expSum := 0.0
-		for c := 0; c < cols; c++ {
-			ex := math.Exp(tContig.Data[offset+c] - maxVal)
-			result[offset+c] = ex
-			expSum += ex
-		}
-
-		// Normalize
-		for c := 0; c < cols; c++ {
-			result[offset+c] /= expSum
-		}
-	}
+	result := t.Device.Softmax(tContig.Data, t.Shape)
 
 	out := NewTensor(result, append([]int{}, t.Shape...), t)
 	out.Backward = func() {
+		rows := 1
+		cols := len(tContig.Data)
+		if len(t.Shape) == 2 {
+			rows = t.Shape[0]
+			cols = t.Shape[1]
+		}
+
 		gradInput := pools.GetZeroedBuffer(len(out.Grad))
 		for r := 0; r < rows; r++ {
 			offset := r * cols

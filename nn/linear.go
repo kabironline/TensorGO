@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/kabironline/nanograd/backend"
 	"github.com/kabironline/nanograd/tensor"
 	"github.com/nlpodyssey/safetensors"
 )
@@ -18,14 +19,12 @@ func NewLinear(inFeatures, outFeatures int) *Linear {
 	w := tensor.NewTensor(make([]float64, inFeatures*outFeatures), []int{inFeatures, outFeatures})
 	b := tensor.NewTensor(make([]float64, outFeatures), []int{outFeatures})
 
+	w.RequiresGrad = true
+	b.RequiresGrad = true
+
 	// Initialize weights and biases
 	w.RandomInit()
 	b.ZeroInit()
-
-	// These are model parameters and will be used in backprop; allocate
-	// their gradient buffers upfront to avoid per-iteration allocations.
-	w.AllocGrad()
-	b.AllocGrad()
 
 	return &Linear{
 		Weight: w,
@@ -76,4 +75,9 @@ func (l *Linear) Save(layerIdx int, out map[string]safetensors.TensorView) error
 	}
 	out[fmt.Sprintf("layer_%d.linear.bias", layerIdx)] = tvB
 	return nil
+}
+
+func (l *Linear) To(dev backend.Backend) {
+	l.Weight = l.Weight.To(dev)
+	l.Bias = l.Bias.To(dev)
 }

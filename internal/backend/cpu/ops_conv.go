@@ -48,10 +48,22 @@ func (b *CPUBackend) Col2Im(colGrad []float64, xShape, xStrides []int, kH, kW, s
 	outH := (H+2*padding-kH)/stride + 1
 	outW := (W+2*padding-kW)/stride + 1
 
+	if N*C*H*W == 0 {
+		return make([]float64, 0)
+	}
+
+	// Double check for zero-size to avoid panic in next loop
+	if len(colGrad) == 0 {
+		return b.Allocate(N * C * H * W)
+	}
+
 	xGrad := b.Allocate(N * C * H * W)
 	rowSize := N * outH * outW
 
 	b.pool.Process(C, func(startC, endC int) {
+		if startC >= endC {
+			return
+		}
 		for c := startC; c < endC; c++ {
 			for kh := 0; kh < kH; kh++ {
 				for kw := 0; kw < kW; kw++ {

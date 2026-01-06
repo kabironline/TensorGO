@@ -1,8 +1,6 @@
 package optim
 
 import (
-	"sync"
-
 	"github.com/kabironline/nanograd/tensor"
 )
 
@@ -16,24 +14,19 @@ func NewSGD(params []*tensor.Tensor, lr float64) *SGD {
 }
 
 func (s *SGD) Step() {
-	var wg sync.WaitGroup
 	for _, p := range s.Params {
-		wg.Add(1)
-		go func(p *tensor.Tensor) {
-			defer wg.Done()
-			for i := range p.Data {
-				p.Data[i] -= s.LR * p.Grad[i]
-			}
-		}(p)
+		if p.Grad == nil {
+			continue
+		}
+		p.Device.StepSGD(p.Data, p.Grad, s.LR)
 	}
-	wg.Wait()
 }
 
 // ZeroGrad sets all gradients of the parameters to zero.
 func (s *SGD) ZeroGrad() {
 	for _, p := range s.Params {
-		for i := range p.Grad {
-			p.Grad[i] = 0
+		if p.Grad != nil {
+			p.Device.Fill(p.Grad, 0, len(p.Grad))
 		}
 	}
 }

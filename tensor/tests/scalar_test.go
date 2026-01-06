@@ -3,6 +3,7 @@ package tensor_test
 import (
 	"testing"
 
+	_ "github.com/kabironline/nanograd/internal/backend/cpu"
 	"github.com/kabironline/nanograd/tensor"
 )
 

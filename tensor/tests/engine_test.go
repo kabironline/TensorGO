@@ -4,12 +4,19 @@ import (
 	"math"
 	"testing"
 
+	_ "github.com/kabironline/nanograd/internal/backend/cpu"
 	"github.com/kabironline/nanograd/tensor"
 )
 
+func newTestTensor(data []float64, shape []int) *tensor.Tensor {
+	t := tensor.NewTensor(data, shape)
+	t.RequiresGrad = true
+	return t
+}
+
 func TestBackPropSimpleAdd(t *testing.T) {
-	x := tensor.NewTensor([]float64{2.0}, []int{1})
-	y := tensor.NewTensor([]float64{3.0}, []int{1})
+	x := newTestTensor([]float64{2.0}, []int{1})
+	y := newTestTensor([]float64{3.0}, []int{1})
 	z := x.Add(y)
 
 	z.BackProp()
@@ -23,7 +30,7 @@ func TestBackPropSimpleAdd(t *testing.T) {
 }
 
 func TestBackPropAccumulation(t *testing.T) {
-	x := tensor.NewTensor([]float64{2.0}, []int{1})
+	x := newTestTensor([]float64{2.0}, []int{1})
 	// z = x + x
 	z := x.Add(x)
 
@@ -37,8 +44,8 @@ func TestBackPropAccumulation(t *testing.T) {
 }
 
 func TestBackPropChainRule(t *testing.T) {
-	x := tensor.NewTensor([]float64{2.0}, []int{1})
-	y := tensor.NewTensor([]float64{3.0}, []int{1})
+	x := newTestTensor([]float64{2.0}, []int{1})
+	y := newTestTensor([]float64{3.0}, []int{1})
 
 	// z = x * y + y
 	mul := x.Mul(y)
@@ -57,8 +64,8 @@ func TestBackPropChainRule(t *testing.T) {
 }
 
 func TestBackPropSimpleMul(t *testing.T) {
-	x := tensor.NewTensor([]float64{2.0}, []int{1})
-	y := tensor.NewTensor([]float64{3.0}, []int{1})
+	x := newTestTensor([]float64{2.0}, []int{1})
+	y := newTestTensor([]float64{3.0}, []int{1})
 	z := x.Mul(y)
 
 	z.BackProp()
@@ -76,9 +83,9 @@ func TestBackPropChain(t *testing.T) {
 	// dz/dx = w
 	// dz/dy = w
 	// dz/dw = x + y
-	x := tensor.NewTensor([]float64{2.0}, []int{1})
-	y := tensor.NewTensor([]float64{3.0}, []int{1})
-	w := tensor.NewTensor([]float64{4.0}, []int{1})
+	x := newTestTensor([]float64{2.0}, []int{1})
+	y := newTestTensor([]float64{3.0}, []int{1})
+	w := newTestTensor([]float64{4.0}, []int{1})
 
 	sum := x.Add(y)
 	z := sum.Mul(w)
@@ -105,8 +112,8 @@ func TestBackPropMatMul(t *testing.T) {
 	// dC/dA = [[1, 1], [1, 1]] * [[5, 7], [6, 8]] = [[11, 15], [11, 15]]
 	// dC/dB = [[1, 3], [2, 4]] * [[1, 1], [1, 1]] = [[4, 4], [6, 6]]
 
-	a := tensor.NewTensor([]float64{1, 2, 3, 4}, []int{2, 2})
-	b := tensor.NewTensor([]float64{5, 6, 7, 8}, []int{2, 2})
+	a := newTestTensor([]float64{1, 2, 3, 4}, []int{2, 2})
+	b := newTestTensor([]float64{5, 6, 7, 8}, []int{2, 2})
 	c := a.MatMul(b)
 
 	c.BackProp()
@@ -132,8 +139,8 @@ func TestBackPropBroadcastAdd(t *testing.T) {
 	// z = x + y = [[11, 22], [13, 24]]
 	// dz/dx = [[1, 1], [1, 1]]
 	// dz/dy = [[1, 1], [1, 1]] summed over dim 0 -> [2, 2]
-	x := tensor.NewTensor([]float64{1, 2, 3, 4}, []int{2, 2})
-	y := tensor.NewTensor([]float64{10, 20}, []int{1, 2})
+	x := newTestTensor([]float64{1, 2, 3, 4}, []int{2, 2})
+	y := newTestTensor([]float64{10, 20}, []int{1, 2})
 	z := x.Add(y)
 
 	z.BackProp()
@@ -154,7 +161,7 @@ func TestBackPropBroadcastAdd(t *testing.T) {
 }
 
 func TestBackPropSum(t *testing.T) {
-	x := tensor.NewTensor([]float64{1, 2, 3, 4}, []int{2, 2})
+	x := newTestTensor([]float64{1, 2, 3, 4}, []int{2, 2})
 	z := x.Sum()
 
 	z.BackProp()
@@ -167,7 +174,7 @@ func TestBackPropSum(t *testing.T) {
 }
 
 func TestBackPropMean(t *testing.T) {
-	x := tensor.NewTensor([]float64{1, 2, 3, 4}, []int{2, 2})
+	x := newTestTensor([]float64{1, 2, 3, 4}, []int{2, 2})
 	z := x.Mean()
 
 	z.BackProp()
@@ -182,10 +189,10 @@ func TestBackPropMean(t *testing.T) {
 func TestBackPropComplex(t *testing.T) {
 	// L = sum((A * B + C) * D)
 	// A: [2, 2], B: [2, 2], C: [2, 2], D: [2, 2]
-	a := tensor.NewTensor([]float64{1, 0, 0, 1}, []int{2, 2})
-	b := tensor.NewTensor([]float64{2, 3, 4, 5}, []int{2, 2})
-	c := tensor.NewTensor([]float64{1, 1, 1, 1}, []int{2, 2})
-	d := tensor.NewTensor([]float64{0.5, 0.5, 0.5, 0.5}, []int{2, 2})
+	a := newTestTensor([]float64{1, 0, 0, 1}, []int{2, 2})
+	b := newTestTensor([]float64{2, 3, 4, 5}, []int{2, 2})
+	c := newTestTensor([]float64{1, 1, 1, 1}, []int{2, 2})
+	d := newTestTensor([]float64{0.5, 0.5, 0.5, 0.5}, []int{2, 2})
 
 	mm := a.MatMul(b) // [[2, 3], [4, 5]]
 	add := mm.Add(c)  // [[3, 4], [5, 6]]
@@ -261,10 +268,10 @@ func BenchmarkBackPropMatMul(b *testing.B) {
 }
 
 func BenchmarkComplexBackProp(b *testing.B) {
-	a := tensor.NewTensor([]float64{1, 0, 0, 1}, []int{2, 2})
-	bb := tensor.NewTensor([]float64{2, 3, 4, 5}, []int{2, 2})
-	c := tensor.NewTensor([]float64{1, 1, 1, 1}, []int{2, 2})
-	d := tensor.NewTensor([]float64{0.5, 0.5, 0.5, 0.5}, []int{2, 2})
+	a := newTestTensor([]float64{1, 0, 0, 1}, []int{2, 2})
+	bb := newTestTensor([]float64{2, 3, 4, 5}, []int{2, 2})
+	c := newTestTensor([]float64{1, 1, 1, 1}, []int{2, 2})
+	d := newTestTensor([]float64{0.5, 0.5, 0.5, 0.5}, []int{2, 2})
 
 	for b.Loop() {
 		// mm = (a * b + c) * d

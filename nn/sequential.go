@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 
+	"github.com/kabironline/nanograd/backend"
 	"github.com/kabironline/nanograd/nn/activations"
 	"github.com/kabironline/nanograd/tensor"
 	"github.com/nlpodyssey/safetensors"
@@ -155,4 +156,10 @@ func LoadModuleAt(idx int, loaded *safetensors.SafeTensors) (Module, error) {
 
 	// Nothing found for this index
 	return nil, nil
+}
+
+func (m *Sequential) To(dev backend.Backend) {
+	for _, layer := range m.Layers {
+		layer.To(dev)
+	}
 }
