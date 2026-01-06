@@ -2,8 +2,6 @@ package tensor
 
 import (
 	"fmt"
-	"runtime"
-	"sync"
 )
 
 // TotalSize calculates the total number of elements in a tensor given its shape.
@@ -65,38 +63,20 @@ func Contiguous(t *Tensor) *Tensor {
 
 	shape := t.Shape
 	totalSize := TotalSize(shape)
-	newData := make([]float64, totalSize)
+	newData := t.Device.Allocate(totalSize)
 
-	workers := runtime.GOMAXPROCS(0)
-	var wg sync.WaitGroup
-	chunk := (totalSize + workers - 1) / workers
-
-	for w := 0; w < workers; w++ {
-		start := w * chunk
-		if start >= totalSize {
-			break
-		}
-		end := start + chunk
-		if end > totalSize {
-			end = totalSize
-		}
-
-		wg.Add(1)
-		go func(s, e int) {
-			defer wg.Done()
-			for i := s; i < e; i++ {
-				newData[i] = t.Data[t.PhysicalIndexFromLinearIndex(i)]
-			}
-		}(start, end)
+	for i := 0; i < totalSize; i++ {
+		newData[i] = t.Data[t.PhysicalIndexFromLinearIndex(i)]
 	}
-	wg.Wait()
 
 	return &Tensor{
-		Data:       newData,
-		Shape:      append([]int{}, shape...),
-		Strides:    ComputeStrides(shape),
-		Grad:       nil,
-		contiguous: true,
+		Data:         newData,
+		Shape:        append([]int{}, shape...),
+		Strides:      ComputeStrides(shape),
+		Grad:         nil,
+		contiguous:   true,
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
 	}
 }
 

@@ -2,7 +2,6 @@ package mnist
 
 import (
 	"fmt"
-	"runtime"
 	"testing"
 
 	"github.com/kabironline/nanograd/nn"
@@ -72,7 +71,6 @@ func TestMNISTCNN(t *testing.T) {
 
 	// Use Adam optimizer
 	optimizer := optim.NewAdam(model.Parameters(), 0.001)
-	optimizer.NumWorkers = runtime.GOMAXPROCS(0)
 
 	// Training loop
 	const numEpochs = 3

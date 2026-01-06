@@ -29,13 +29,14 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 	}
 
 	out := &Tensor{
-		Data:    t.Data,
-		Shape:   newShape,
-		Strides: newStrides,
-		Offset:  t.Offset,
-		// Grad allocated lazily
-		Grad:    nil,
-		Parents: []*Tensor{t},
+		Data:         t.Data,
+		Shape:        newShape,
+		Strides:      newStrides,
+		Offset:       t.Offset,
+		Grad:         nil,
+		Parents:      []*Tensor{t},
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
 	}
 
 	out.Backward = func() {
@@ -46,7 +47,7 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 
 		// Ensure parent has a gradient buffer to accumulate into.
 		if t.Grad == nil {
-			t.Grad = make([]float64, len(t.Data))
+			t.AllocGrad()
 		}
 
 		// Build inverse permutation: for each axis k in the original tensor,
@@ -100,77 +101,55 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 // Reshape returns a new tensor with the same data but a different shape.
 func (t *Tensor) Reshape(newShape []int) *Tensor {
 	totalOld := TotalSize(t.Shape)
-	totalNew := TotalSize(newShape)
+
+	// Handle inferred dimension (-1)
+	actualShape := make([]int, len(newShape))
+	copy(actualShape, newShape)
+	inferredIdx := -1
+	totalKnown := 1
+	for i, dim := range newShape {
+		if dim == -1 {
+			if inferredIdx != -1 {
+				panic("Reshape: only one dimension can be inferred (-1)")
+			}
+			inferredIdx = i
+		} else {
+			totalKnown *= dim
+		}
+	}
+
+	if inferredIdx != -1 {
+		if totalOld%totalKnown != 0 {
+			panic("Reshape: total size not divisible by known dimensions")
+		}
+		actualShape[inferredIdx] = totalOld / totalKnown
+	}
+
+	totalNew := TotalSize(actualShape)
 	if totalOld != totalNew {
 		panic("Reshape: total size must remain the same")
 	}
 
 	out := &Tensor{
 		Data:    t.Data,
-		Shape:   newShape,
-		Strides: ComputeStrides(newShape),
+		Shape:   actualShape,
+		Strides: ComputeStrides(actualShape),
 		Offset:  t.Offset,
 		// Grad allocated lazily
-		Grad:    nil,
-		Parents: []*Tensor{t},
+		Grad:         nil,
+		Parents:      []*Tensor{t},
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
 	}
-	out.Backward = func() {
-		// Nothing to do if no gradient was produced for the output.
-		if out.Grad == nil {
-			return
-		}
 
-		// Ensure parent has a gradient buffer to accumulate into.
-		if t.Grad == nil {
-			t.Grad = make([]float64, len(t.Data))
-		}
-
-		total := TotalSize(out.Shape)
-		if total == 0 {
-			return
-		}
-
-		// Fast-path: shapes and strides identical -> direct accumulation.
-		if len(out.Shape) == len(t.Shape) {
-			same := true
-			for i := range out.Shape {
-				if out.Shape[i] != t.Shape[i] || out.Strides[i] != t.Strides[i] {
-					same = false
-					break
-				}
-			}
-			if same {
-				t.AccumulateGrad(out.Grad)
+	if t.RequiresGrad {
+		out.Backward = func() {
+			if out.Grad == nil {
 				return
 			}
-		}
-
-		// Generic path: iterate linear index and map it to both tensors'
-		// multi-dimensional coordinates, then accumulate into parent's grad.
-		outCoords := make([]int, len(out.Shape))
-		tCoords := make([]int, len(t.Shape))
-		for i := 0; i < total; i++ {
-			idx := i
-			for k := len(outCoords) - 1; k >= 0; k-- {
-				outCoords[k] = idx % out.Shape[k]
-				idx /= out.Shape[k]
-			}
-
-			idx = i
-			for k := len(tCoords) - 1; k >= 0; k-- {
-				tCoords[k] = idx % t.Shape[k]
-				idx /= t.Shape[k]
-			}
-
-			// out.Grad is a contiguous buffer that starts at 0, so index it by `i`
-			gradVal := out.Grad[i]
-
-			tIdx := t.Offset
-			for k := 0; k < len(tCoords); k++ {
-				tIdx += tCoords[k] * t.Strides[k]
-			}
-
-			t.Grad[tIdx] += gradVal
+			// Gradient of reshape is just reshape back to original shape
+			// and accumulate. Since Data is shared, we just pass the buffer.
+			t.AccumulateGrad(out.Grad)
 		}
 	}
 

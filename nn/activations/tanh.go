@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/kabironline/nanograd/backend"
 	"github.com/kabironline/nanograd/tensor"
 	"github.com/nlpodyssey/safetensors"
 )
@@ -13,6 +14,7 @@ type Tanh struct{}
 
 func (t *Tanh) Forward(x *tensor.Tensor) *tensor.Tensor { return x.Tanh() }
 func (t *Tanh) Parameters() []*tensor.Tensor            { return []*tensor.Tensor{} }
+func (t *Tanh) To(dev backend.Backend)                  {}
 
 func (t *Tanh) Save(idx int, out map[string]safetensors.TensorView) error {
 	data := binary.LittleEndian.AppendUint32(nil, math.Float32bits(0))

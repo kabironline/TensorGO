@@ -1,6 +1,7 @@
 package conv
 
 import (
+	"github.com/kabironline/nanograd/backend"
 	"github.com/kabironline/nanograd/tensor"
 	"github.com/nlpodyssey/safetensors"
 )
@@ -9,6 +10,10 @@ type Flatten struct{}
 
 func NewFlatten() *Flatten {
 	return &Flatten{}
+}
+
+func (f *Flatten) To(dev backend.Backend) {
+	// Stateless
 }
 
 func (f *Flatten) Forward(x *tensor.Tensor) *tensor.Tensor {

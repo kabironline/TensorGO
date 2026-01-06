@@ -1,7 +1,6 @@
 package mnist
 
 import (
-	"runtime"
 	"testing"
 
 	"github.com/kabironline/nanograd/nn"
@@ -68,7 +67,6 @@ func TestMNIST(t *testing.T) {
 
 	// Use Adam optimizer with learning rate
 	optimizer := optim.NewAdam(model.Parameters(), 0.005)
-	optimizer.NumWorkers = runtime.GOMAXPROCS(0)
 
 	// Training loop with CrossEntropy loss
 	const numEpochs = 5
