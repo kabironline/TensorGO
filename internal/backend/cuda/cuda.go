@@ -3,10 +3,11 @@
 package cuda
 
 /*
-#cgo LDFLAGS: -L/usr/local/cuda/lib64 -L/usr/lib/wsl/lib -lcuda -lcudart -lcublas
+#cgo LDFLAGS: -L/usr/local/cuda/lib64 -L/usr/lib/wsl/lib -lcuda -lcudart -lcublas -lcudnn
 #cgo CFLAGS: -I/usr/local/cuda/include
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
+#include <cudnn.h>
 */
 import "C"
 
@@ -71,13 +72,11 @@ func NewCUDABackend(deviceID int) (*CUDABackend, error) {
 	}
 	b.cuBLASHandle = unsafe.Pointer(cublasHandle)
 
-	/* Commented out until cuDNN is installed
 	var cudnnHandle C.cudnnHandle_t
 	if C.cudnnCreate(&cudnnHandle) != C.CUDNN_STATUS_SUCCESS {
 		return nil, fmt.Errorf("failed to initialize cuDNN")
 	}
 	b.cuDNNHandle = unsafe.Pointer(cudnnHandle)
-	*/
 
 	// 4. Set up cleanup
 	runtime.SetFinalizer(b, func(obj *CUDABackend) {
