@@ -1,5 +1,3 @@
-//go:build cuda
-
 package cuda
 
 // ============================================================================
@@ -23,7 +21,7 @@ func (b *CUDABackend) Sqrt(a []float64, size int) []float64               { retu
 func (b *CUDABackend) Square(a []float64, size int) []float64             { return nil }
 
 // Matrix Operations
-func (b *CUDABackend) MatMul(a, b_val []float64, m, n, k, strideA, strideB int) []float64 { return nil }
+// func (b *CUDABackend) MatMul(a, b_val []float64, m, n, k, strideA, strideB int) []float64 { return nil }
 func (b *CUDABackend) MatMulAdd(a, b_val, c []float64, m, n, k, strideA, strideB int) []float64 {
 	return nil
 }

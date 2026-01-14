@@ -1,5 +1,3 @@
-//go:build cuda
-
 package cuda
 
 /*
@@ -33,23 +31,6 @@ type CUDABackend struct {
 
 	workspace     unsafe.Pointer
 	workspaceSize int
-}
-
-func init() {
-	// 1. Check if CUDA is reachable
-	var count C.int
-	err := C.cudaGetDeviceCount(&count)
-	if err == C.cudaSuccess && count > 0 {
-		// Register a default backend (targets device 0)
-		// Or allow the user to create specific ones later
-		b, _ := NewCUDABackend(0)
-		backend.RegisterBackend("cuda", b)
-
-		// Optional: Set as default if no other backend exists
-		if backend.GetDefaultBackend() == nil {
-			backend.SetDefaultBackend(b)
-		}
-	}
 }
 
 func NewCUDABackend(deviceID int) (*CUDABackend, error) {

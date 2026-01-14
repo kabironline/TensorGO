@@ -1,5 +1,3 @@
-//go:build cuda
-
 package cuda
 
 /*
@@ -81,7 +79,9 @@ func (b *CUDABackend) Free(data []float64) {
 		return
 	}
 	ptr := unsafe.Pointer(unsafe.SliceData(data))
-	b.memPool.Free(ptr)
+	if err := b.memPool.Free(ptr); err != nil {
+		panic(err)
+	}
 }
 
 func (b *CUDABackend) Copy(dst, src []float64) {
@@ -98,4 +98,8 @@ func (b *CUDABackend) Copy(dst, src []float64) {
 	if res != C.cudaSuccess {
 		panic(fmt.Sprintf("Device-to-device copy failed: %v", res))
 	}
+}
+
+func (b *CUDABackend) Sync() {
+	C.cudaDeviceSynchronize()
 }
