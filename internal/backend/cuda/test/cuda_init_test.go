@@ -1,5 +1,3 @@
-//go:build cuda
-
 package cuda_test
 
 import (
@@ -29,7 +27,8 @@ func TestCUDADeviceProperties(t *testing.T) {
 	for i := 0; i < b; i++ {
 		props, err := cuda.GetCudaDeviceProps(i)
 		assert.NoError(t, err, "Failed to get properties for device %d", i)
-		t.Logf("Device %d: %s, Compute Capability: %d.%d, Total Memory: %d MB",
-			i, props["Name"], props["Major"], props["Minor"], props["TotalGlobalMem"].(uint64)/(1024*1024))
+		for key, value := range props {
+			t.Logf("Device %d - %s: %v", i, key, value)
+		}
 	}
 }

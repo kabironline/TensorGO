@@ -133,16 +133,16 @@ type MatrixOps interface {
 	// a: data buffer for matrix A with shape [m, k]
 	// b: data buffer for matrix B with shape [k, n]
 	// m, n, k: matrix dimensions
-	MatMul(a, b []float64, m, n, k, strideA, strideB int) []float64
+	MatMul(a, b, out []float64, m, n, k, strideA, strideB int) []float64
 
 	// MatMulAdd performs matrix multiplication and addition: C = A @ B + C
 	MatMulAdd(a, b, c []float64, m, n, k, strideA, strideB int) []float64
 
 	// MatMulTransA performs matrix multiplication with A transposed: C = A^T @ B
-	MatMulTransA(a, b []float64, m, n, k, strideA, strideB int) []float64
+	MatMulTransA(a, b, out []float64, m, n, k, strideA, strideB int) []float64
 
 	// MatMulTransB performs matrix multiplication with B transposed: C = A @ B^T
-	MatMulTransB(a, b []float64, m, n, k, strideA, strideB int) []float64
+	MatMulTransB(a, b, out []float64, m, n, k, strideA, strideB int) []float64
 }
 
 // BatchedMatrixOps is an optional interface for optimized batched operations

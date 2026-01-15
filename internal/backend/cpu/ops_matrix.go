@@ -51,27 +51,24 @@ func matMul(a, b []float64, m, n, k, sA, sB int, aT, bT bool, out []float64) []f
 // a: data buffer for matrix A with shape [m, k]
 // b: data buffer for matrix B with shape [k, n]
 // m, n, k: matrix dimensions
-func (bk *CPUBackend) MatMul(a, b []float64, m, n, k, sA, sB int) []float64 {
-	out := bk.Allocate(m * n)
+func (bk *CPUBackend) MatMul(a, b, out []float64, m, n, k, sA, sB int) []float64 {
 	return matMul(a, b, m, n, k, sA, sB, false, false, out)
 }
 
 // MatMulTransA performs matrix multiplication with A transposed: C = A^T @ B
-func (bk *CPUBackend) MatMulTransA(a, b []float64, m, n, k, sA, sB int) []float64 {
-	out := bk.Allocate(m * n)
+func (bk *CPUBackend) MatMulTransA(a, b, out []float64, m, n, k, sA, sB int) []float64 {
 	return matMul(a, b, m, n, k, sA, sB, true, false, out)
 }
 
 // MatMulTransB performs matrix multiplication with B transposed: C = A @ B^T
-func (bk *CPUBackend) MatMulTransB(a, b []float64, m, n, k, sA, sB int) []float64 {
-	out := bk.Allocate(m * n)
+func (bk *CPUBackend) MatMulTransB(a, b, out []float64, m, n, k, sA, sB int) []float64 {
 	return matMul(a, b, m, n, k, sA, sB, false, true, out)
 }
 
 // MatMulAdd performs matrix multiplication and addition: C = A @ B + C
 func (bk *CPUBackend) MatMulAdd(a, b, c []float64, m, n, k, sA, sB int) []float64 {
 	out := bk.Allocate(m * n)
-	copy(out, c) // Initial C = input C
+	copy(out, c) // Initial out = input C
 	blas64.Gemm(
 		blas.NoTrans, blas.NoTrans,
 		1.0, // alpha

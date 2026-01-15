@@ -1,5 +1,3 @@
-//go:build cuda
-
 package cuda
 
 /*
@@ -35,23 +33,6 @@ type CUDABackend struct {
 	workspaceSize int
 }
 
-func init() {
-	// 1. Check if CUDA is reachable
-	var count C.int
-	err := C.cudaGetDeviceCount(&count)
-	if err == C.cudaSuccess && count > 0 {
-		// Register a default backend (targets device 0)
-		// Or allow the user to create specific ones later
-		b, _ := NewCUDABackend(0)
-		backend.RegisterBackend("cuda", b)
-
-		// Optional: Set as default if no other backend exists
-		if backend.GetDefaultBackend() == nil {
-			backend.SetDefaultBackend(b)
-		}
-	}
-}
-
 func NewCUDABackend(deviceID int) (*CUDABackend, error) {
 	// 1. Switch context to the target GPU
 	res := C.cudaSetDevice(C.int(deviceID))
@@ -72,18 +53,34 @@ func NewCUDABackend(deviceID int) (*CUDABackend, error) {
 	}
 	b.cuBLASHandle = unsafe.Pointer(cublasHandle)
 
+	// 3. Initialize cuDNN
 	var cudnnHandle C.cudnnHandle_t
 	if C.cudnnCreate(&cudnnHandle) != C.CUDNN_STATUS_SUCCESS {
 		return nil, fmt.Errorf("failed to initialize cuDNN")
 	}
 	b.cuDNNHandle = unsafe.Pointer(cudnnHandle)
 
-	// 4. Set up cleanup
+	// 4. Create CUDA Stream
+	var stream C.cudaStream_t
+	if C.cudaStreamCreate(&stream) != C.cudaSuccess {
+		return nil, fmt.Errorf("failed to create cuda stream")
+	}
+	b.stream = unsafe.Pointer(stream)
+
+	// bind stream to cuBLAS
+	if C.cublasSetStream(C.cublasHandle_t(cublasHandle), stream) != C.CUBLAS_STATUS_SUCCESS {
+		return nil, fmt.Errorf("failed to set cuBLAS stream")
+	}
+
+	// 5. Set up cleanup
 	runtime.SetFinalizer(b, func(obj *CUDABackend) {
 		C.cublasDestroy(C.cublasHandle_t(obj.cuBLASHandle))
 		// C.cudnnDestroy(C.cudnnHandle_t(obj.cuDNNHandle))
 		if obj.memPool != nil {
 			obj.memPool.Clear()
+		}
+		if obj.stream != nil {
+			C.cudaStreamDestroy(C.cudaStream_t(obj.stream))
 		}
 	})
 

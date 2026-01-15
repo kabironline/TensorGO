@@ -1,5 +1,3 @@
-//go:build cuda
-
 package cuda
 
 /*
@@ -161,11 +159,10 @@ func nextPowerOf2(n int) int {
 // These will be actual CGO calls to cuda_runtime.h
 func cudaMalloc(size int) (unsafe.Pointer, error) {
 	var ptr unsafe.Pointer
-	// Use cudaMallocManaged so the Go runtime/CPU can see the memory address
-	// without segfaulting, even if we mainly use it on GPU.
-	res := C.cudaMallocManaged(&ptr, C.size_t(size), C.cudaMemAttachGlobal)
+	// Use regular cudaMalloc for device-only memory (much faster, no page faults)
+	res := C.cudaMalloc(&ptr, C.size_t(size))
 	if res != C.cudaSuccess {
-		return nil, fmt.Errorf("cudaMallocManaged failed for size %d: code %v", size, res)
+		return nil, fmt.Errorf("cudaMalloc failed for size %d: code %v", size, res)
 	}
 	return ptr, nil
 }

@@ -75,15 +75,35 @@ func NewEmptyTensor(shape []int, dev backend.Backend) *Tensor {
 // initializes an identity matrix tensor of given size (size x size)
 func NewIdentityTensor(size int) *Tensor {
 	dev := backend.AutoSelectBackend()
+
+	// For GPU backends, create on CPU then copy to device
+	if dev.IsGPU() {
+		if transfer, ok := dev.(backend.MemoryTransfer); ok {
+			h_data := make([]float64, size*size)
+			for i := 0; i < size; i++ {
+				h_data[i*size+i] = 1.0
+			}
+			data := transfer.ToDevice(h_data)
+			return &Tensor{
+				Data:       data,
+				Shape:      []int{size, size},
+				Strides:    []int{size, 1},
+				Grad:       nil,
+				Device:     dev,
+				contiguous: true,
+			}
+		}
+	}
+
+	// For CPU backend (or GPU without MemoryTransfer), allocate and initialize directly
 	data := dev.Allocate(size * size)
 	for i := 0; i < size; i++ {
 		data[i*size+i] = 1.0
 	}
 	return &Tensor{
-		Data:    data,
-		Shape:   []int{size, size},
-		Strides: []int{size, 1},
-		// allocate Grad lazily
+		Data:       data,
+		Shape:      []int{size, size},
+		Strides:    []int{size, 1},
 		Grad:       nil,
 		Device:     dev,
 		contiguous: true,
