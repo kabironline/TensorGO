@@ -2,28 +2,28 @@ package cpu
 
 import "math"
 
-func (c *CPUBackend) Exp(x []float64, n int) []float64 {
-	res := make([]float64, n)
+func (c *CPUBackend) Exp(x []float32, n int) []float32 {
+	res := make([]float32, n)
 	c.pool.Process(n, func(start, end int) {
 		for i := start; i < end; i++ {
-			res[i] = math.Exp(x[i])
+			res[i] = float32(math.Exp(float64(x[i])))
 		}
 	})
 	return res
 }
 
-func (c *CPUBackend) Log(x []float64, n int) []float64 {
-	res := make([]float64, n)
+func (c *CPUBackend) Log(x []float32, n int) []float32 {
+	res := make([]float32, n)
 	c.pool.Process(n, func(start, end int) {
 		for i := start; i < end; i++ {
-			res[i] = math.Log(x[i])
+			res[i] = float32(math.Log(float64(x[i])))
 		}
 	})
 	return res
 }
 
-func (c *CPUBackend) Square(x []float64, n int) []float64 {
-	res := make([]float64, n)
+func (c *CPUBackend) Square(x []float32, n int) []float32 {
+	res := make([]float32, n)
 	c.pool.Process(n, func(start, end int) {
 		for i := start; i < end; i++ {
 			res[i] = x[i] * x[i]

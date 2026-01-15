@@ -4,8 +4,8 @@ import (
 	"math/rand"
 )
 
-func (bk *CPUBackend) Normal(data []float64, mean, stdDev float64, size int) {
+func (bk *CPUBackend) Normal(data []float32, mean, stdDev float32, size int) {
 	for i := 0; i < size; i++ {
-		data[i] = mean + rand.NormFloat64()*stdDev
+		data[i] = mean + float32(rand.NormFloat64())*stdDev
 	}
 }

@@ -31,6 +31,11 @@ type CUDABackend struct {
 
 	workspace     unsafe.Pointer
 	workspaceSize int
+
+	// prevMath stores the previous cuBLAS math mode (so we can restore it on cleanup)
+	prevMath C.cublasMath_t
+	// whether we successfully set the tensor-op math mode during init
+	mathModeChanged bool
 }
 
 func NewCUDABackend(deviceID int) (*CUDABackend, error) {
@@ -72,8 +77,22 @@ func NewCUDABackend(deviceID int) (*CUDABackend, error) {
 		return nil, fmt.Errorf("failed to set cuBLAS stream")
 	}
 
+	// Best-effort: attempt to enable Tensor Core / TF32 math mode for faster GEMMs
+	// Record previous mode so we can restore it in the finalizer.
+	var prev C.cublasMath_t
+	if C.cublasGetMathMode(C.cublasHandle_t(cublasHandle), &prev) == C.CUBLAS_STATUS_SUCCESS {
+		if C.cublasSetMathMode(C.cublasHandle_t(cublasHandle), C.CUBLAS_TENSOR_OP_MATH) == C.CUBLAS_STATUS_SUCCESS {
+			b.prevMath = prev
+			b.mathModeChanged = true
+		}
+	}
+
 	// 5. Set up cleanup
 	runtime.SetFinalizer(b, func(obj *CUDABackend) {
+		// Restore previous cuBLAS math mode if we changed it during init
+		if obj.mathModeChanged {
+			C.cublasSetMathMode(C.cublasHandle_t(obj.cuBLASHandle), obj.prevMath)
+		}
 		C.cublasDestroy(C.cublasHandle_t(obj.cuBLASHandle))
 		// C.cudnnDestroy(C.cudnnHandle_t(obj.cuDNNHandle))
 		if obj.memPool != nil {

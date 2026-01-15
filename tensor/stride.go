@@ -31,12 +31,12 @@ func (t *Tensor) getIndex(indices ...int) int {
 }
 
 // At returns the element at the given multi-dimensional indices.
-func (t *Tensor) At(indices ...int) float64 {
+func (t *Tensor) At(indices ...int) float32 {
 	return t.Data[t.getIndex(indices...)]
 }
 
 // SetAt sets the value at the given multi-dimensional indices.
-func (t *Tensor) SetAt(val float64, indices ...int) {
+func (t *Tensor) SetAt(val float32, indices ...int) {
 	t.Data[t.getIndex(indices...)] = val
 }
 

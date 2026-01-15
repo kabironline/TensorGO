@@ -5,7 +5,7 @@ import (
 )
 
 // StepSGD performs a single step of SGD update: data -= lr * grad
-func (b *CPUBackend) StepSGD(data, grad []float64, lr float64) {
+func (b *CPUBackend) StepSGD(data, grad []float32, lr float32) {
 	// Simple element-wise update. Could be parallelized for large tensors.
 	if len(data) > b.parallelThreshold {
 		b.pool.Process(len(data), func(start, end int) {
@@ -21,9 +21,9 @@ func (b *CPUBackend) StepSGD(data, grad []float64, lr float64) {
 }
 
 // StepAdam performs a single step of Adam update
-func (b *CPUBackend) StepAdam(data, grad, m, v []float64, lr, beta1, beta2, eps float64, t int) {
-	beta1Pow := math.Pow(beta1, float64(t))
-	beta2Pow := math.Pow(beta2, float64(t))
+func (b *CPUBackend) StepAdam(data, grad, m, v []float32, lr, beta1, beta2, eps float32, t int) {
+	beta1Pow := float32(math.Pow(float64(beta1), float64(t)))
+	beta2Pow := float32(math.Pow(float64(beta2), float64(t)))
 	denom1 := 1 - beta1Pow
 	denom2 := 1 - beta2Pow
 	oneMinusBeta1 := 1 - beta1
@@ -38,7 +38,7 @@ func (b *CPUBackend) StepAdam(data, grad, m, v []float64, lr, beta1, beta2, eps 
 			mHat := m[i] / denom1
 			vHat := v[i] / denom2
 
-			data[i] -= lr * mHat / (math.Sqrt(vHat) + eps)
+			data[i] -= lr * mHat / (float32(math.Sqrt(float64(vHat))) + eps)
 		}
 	}
 

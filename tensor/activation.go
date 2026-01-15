@@ -101,7 +101,7 @@ func (t *Tensor) Softmax() *Tensor {
 		for r := 0; r < rows; r++ {
 			offset := r * cols
 			// Compute sum(y_k * grad_k) for this row
-			dot := 0.0
+			var dot float32 = 0.0
 			for c := 0; c < cols; c++ {
 				dot += out.Data[offset+c] * out.Grad[offset+c]
 			}

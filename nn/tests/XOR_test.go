@@ -15,9 +15,9 @@ import (
 func TestXOR(t *testing.T) {
 	// 1. Data Setup
 	// Inputs: [0,0], [0,1], [1,0], [1,1]
-	inputs := tensor.NewTensor([]float64{0, 0, 0, 1, 1, 0, 1, 1}, []int{4, 2})
+	inputs := tensor.NewTensor([]float32{0, 0, 0, 1, 1, 0, 1, 1}, []int{4, 2})
 	// Targets: 0, 1, 1, 0
-	targets := tensor.NewTensor([]float64{0, 1, 1, 0}, []int{4, 1})
+	targets := tensor.NewTensor([]float32{0, 1, 1, 0}, []int{4, 1})
 
 	// 2. Model Architecture
 	// 2 inputs -> 4 hidden (ReLU) -> 1 output
@@ -31,7 +31,7 @@ func TestXOR(t *testing.T) {
 	)
 	optimizer := optim.NewAdam(model.Parameters(), 0.01)
 
-	lastLoss := 0.0
+	var lastLoss float32 = 0.0
 
 	// 3. Training Loop
 	for epoch := range 100 {
@@ -79,8 +79,8 @@ func TestXOR(t *testing.T) {
 // Benchmark for XOR training
 func BenchmarkXORTraining(b *testing.B) {
 	// Setup same as TestXOR
-	inputs := tensor.NewTensor([]float64{0, 0, 0, 1, 1, 0, 1, 1}, []int{4, 2})
-	targets := tensor.NewTensor([]float64{0, 1, 1, 0}, []int{4, 1})
+	inputs := tensor.NewTensor([]float32{0, 0, 0, 1, 1, 0, 1, 1}, []int{4, 2})
+	targets := tensor.NewTensor([]float32{0, 1, 1, 0}, []int{4, 1})
 	model := nn.NewSequential(
 		nn.NewLinear(2, 8),
 		&activations.ReLU{},

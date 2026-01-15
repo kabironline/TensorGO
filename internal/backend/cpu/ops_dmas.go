@@ -1,21 +1,23 @@
 package cpu
 
-import "gonum.org/v1/gonum/blas/blas64"
+import (
+	"gonum.org/v1/gonum/blas/blas32"
+)
 
 // DMAS operations for CPU backend.
 
 // Add performs element-wise addition: out = a + b
-func (bk *CPUBackend) Add(a, b []float64, size int) []float64 {
+func (bk *CPUBackend) Add(a, b []float32, size int) []float32 {
 	out := bk.Allocate(size)
 	copy(out, a)
-	blas64.Axpy(
+	blas32.Axpy(
 		1.0,
-		blas64.Vector{
+		blas32.Vector{
 			N:    size,
 			Inc:  1,
 			Data: b,
 		},
-		blas64.Vector{
+		blas32.Vector{
 			N:    size,
 			Inc:  1,
 			Data: out,
@@ -24,17 +26,17 @@ func (bk *CPUBackend) Add(a, b []float64, size int) []float64 {
 }
 
 // Sub performs element-wise subtraction: out = a - b
-func (bk *CPUBackend) Sub(a, b []float64, size int) []float64 {
+func (bk *CPUBackend) Sub(a, b []float32, size int) []float32 {
 	out := bk.Allocate(size)
 	copy(out, a)
-	blas64.Axpy(
+	blas32.Axpy(
 		-1.0,
-		blas64.Vector{
+		blas32.Vector{
 			N:    size,
 			Inc:  1,
 			Data: b,
 		},
-		blas64.Vector{
+		blas32.Vector{
 			N:    size,
 			Inc:  1,
 			Data: out,
@@ -43,7 +45,7 @@ func (bk *CPUBackend) Sub(a, b []float64, size int) []float64 {
 }
 
 // Mul performs element-wise multiplication: out = a * b
-func (bk *CPUBackend) Mul(a, b []float64, size int) []float64 {
+func (bk *CPUBackend) Mul(a, b []float32, size int) []float32 {
 	out := bk.Allocate(size)
 	copy(out, a)
 	for i := range out {
@@ -53,7 +55,7 @@ func (bk *CPUBackend) Mul(a, b []float64, size int) []float64 {
 }
 
 // Div performs element-wise division: out = a / b
-func (bk *CPUBackend) Div(a, b []float64, size int) []float64 {
+func (bk *CPUBackend) Div(a, b []float32, size int) []float32 {
 	out := bk.Allocate(size)
 	for i := range out {
 		out[i] = a[i] / b[i]
@@ -62,7 +64,7 @@ func (bk *CPUBackend) Div(a, b []float64, size int) []float64 {
 }
 
 // Neg performs element-wise negation: out = -a
-func (bk *CPUBackend) Neg(a []float64, size int) []float64 {
+func (bk *CPUBackend) Neg(a []float32, size int) []float32 {
 	out := bk.Allocate(size)
 	for i := range out {
 		out[i] = -a[i]
@@ -73,23 +75,23 @@ func (bk *CPUBackend) Neg(a []float64, size int) []float64 {
 // -------------------- Scalar Operations --------------------
 
 // AddScalar performs element-wise scalar addition: out = a + scalar
-func (bk *CPUBackend) AddScalar(a []float64, scalar float64, size int) []float64 {
+func (bk *CPUBackend) AddScalar(a []float32, scalar float32, size int) []float32 {
 	out := bk.Allocate(size)
 	copy(out, a)
-	// Use blas64.Axpy to add scalar*ones to out
+	// Use blas32.Axpy to add scalar*ones to out
 	// Create a temporary slice of ones
-	ones := make([]float64, size)
+	ones := make([]float32, size)
 	for i := range ones {
 		ones[i] = 1.0
 	}
-	blas64.Axpy(
+	blas32.Axpy(
 		scalar,
-		blas64.Vector{
+		blas32.Vector{
 			N:    size,
 			Inc:  1,
 			Data: ones,
 		},
-		blas64.Vector{
+		blas32.Vector{
 			N:    size,
 			Inc:  1,
 			Data: out,
@@ -98,22 +100,22 @@ func (bk *CPUBackend) AddScalar(a []float64, scalar float64, size int) []float64
 }
 
 // SubScalar performs element-wise scalar subtraction: out = a - scalar
-func (bk *CPUBackend) SubScalar(a []float64, scalar float64, size int) []float64 {
+func (bk *CPUBackend) SubScalar(a []float32, scalar float32, size int) []float32 {
 	out := bk.Allocate(size)
 	copy(out, a)
-	// Use blas64.Axpy to subtract scalar*ones from out
-	ones := make([]float64, size)
+	// Use blas32.Axpy to subtract scalar*ones from out
+	ones := make([]float32, size)
 	for i := range ones {
 		ones[i] = 1.0
 	}
-	blas64.Axpy(
+	blas32.Axpy(
 		-scalar,
-		blas64.Vector{
+		blas32.Vector{
 			N:    size,
 			Inc:  1,
 			Data: ones,
 		},
-		blas64.Vector{
+		blas32.Vector{
 			N:    size,
 			Inc:  1,
 			Data: out,
@@ -122,12 +124,12 @@ func (bk *CPUBackend) SubScalar(a []float64, scalar float64, size int) []float64
 }
 
 // MulScalar performs element-wise scalar multiplication: out = a * scalar
-func (bk *CPUBackend) MulScalar(a []float64, scalar float64, size int) []float64 {
+func (bk *CPUBackend) MulScalar(a []float32, scalar float32, size int) []float32 {
 	out := bk.Allocate(size)
 	copy(out, a)
-	blas64.Scal(
+	blas32.Scal(
 		scalar,
-		blas64.Vector{
+		blas32.Vector{
 			N:    size,
 			Inc:  1,
 			Data: out,
@@ -136,13 +138,13 @@ func (bk *CPUBackend) MulScalar(a []float64, scalar float64, size int) []float64
 }
 
 // DivScalar performs element-wise scalar division: out = a / scalar
-func (bk *CPUBackend) DivScalar(a []float64, scalar float64, size int) []float64 {
+func (bk *CPUBackend) DivScalar(a []float32, scalar float32, size int) []float32 {
 	out := bk.Allocate(size)
 	invScalar := 1.0 / scalar
 	copy(out, a)
-	blas64.Scal(
+	blas32.Scal(
 		invScalar,
-		blas64.Vector{
+		blas32.Vector{
 			N:    size,
 			Inc:  1,
 			Data: out,

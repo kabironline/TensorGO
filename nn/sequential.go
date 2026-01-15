@@ -108,10 +108,10 @@ func LoadModuleAt(idx int, loaded *safetensors.SafeTensors) (Module, error) {
 
 		// Convert weight
 		dataW := tvW.Data()
-		floatW := make([]float64, 0, len(dataW)/4)
+		floatW := make([]float32, 0, len(dataW)/4)
 		for i := 0; i < len(dataW); i += 4 {
 			bits := binary.LittleEndian.Uint32(dataW[i : i+4])
-			floatW = append(floatW, float64(math.Float32frombits(bits)))
+			floatW = append(floatW, float32(math.Float32frombits(bits)))
 		}
 		shapeW := make([]int, len(tvW.Shape()))
 		for i, s := range tvW.Shape() {
@@ -120,10 +120,10 @@ func LoadModuleAt(idx int, loaded *safetensors.SafeTensors) (Module, error) {
 
 		// Convert bias
 		dataB := tvB.Data()
-		floatB := make([]float64, 0, len(dataB)/4)
+		floatB := make([]float32, 0, len(dataB)/4)
 		for i := 0; i < len(dataB); i += 4 {
 			bits := binary.LittleEndian.Uint32(dataB[i : i+4])
-			floatB = append(floatB, float64(math.Float32frombits(bits)))
+			floatB = append(floatB, float32(math.Float32frombits(bits)))
 		}
 		shapeB := make([]int, len(tvB.Shape()))
 		for i, s := range tvB.Shape() {

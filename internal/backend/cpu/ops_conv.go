@@ -2,7 +2,7 @@ package cpu
 
 // ConvOps implementation for CPU
 
-func (b *CPUBackend) Im2Col(data []float64, shape, strides []int, kH, kW, stride, padding int) []float64 {
+func (b *CPUBackend) Im2Col(data []float32, shape, strides []int, kH, kW, stride, padding int) []float32 {
 	N, C, H, W := shape[0], shape[1], shape[2], shape[3]
 	outH := (H+2*padding-kH)/stride + 1
 	outW := (W+2*padding-kW)/stride + 1
@@ -43,13 +43,13 @@ func (b *CPUBackend) Im2Col(data []float64, shape, strides []int, kH, kW, stride
 	return resData
 }
 
-func (b *CPUBackend) Col2Im(colGrad []float64, xShape, xStrides []int, kH, kW, stride, padding int) []float64 {
+func (b *CPUBackend) Col2Im(colGrad []float32, xShape, xStrides []int, kH, kW, stride, padding int) []float32 {
 	N, C, H, W := xShape[0], xShape[1], xShape[2], xShape[3]
 	outH := (H+2*padding-kH)/stride + 1
 	outW := (W+2*padding-kW)/stride + 1
 
 	if N*C*H*W == 0 {
-		return make([]float64, 0)
+		return make([]float32, 0)
 	}
 
 	// Double check for zero-size to avoid panic in next loop

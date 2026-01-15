@@ -36,14 +36,14 @@ func TestMNIST(t *testing.T) {
 	trainData, testData := loadMNISTData(t)
 
 	numTrainSamples := len(trainData.Images)
-	trainInputs := make([]float64, numTrainSamples*28*28)
-	trainTargets := make([]float64, numTrainSamples*10)
+	trainInputs := make([]float32, numTrainSamples*28*28)
+	trainTargets := make([]float32, numTrainSamples*10)
 
 	for i := range numTrainSamples {
 		imgRaw := trainData.Images[i]
 		img := prepareImage(imgRaw)
 		for j, v := range img {
-			trainInputs[i*28*28+j] = float64(v)
+			trainInputs[i*28*28+j] = float32(v)
 		}
 		label := trainData.Labels[i]
 		for k := range 10 {
@@ -73,7 +73,7 @@ func TestMNIST(t *testing.T) {
 	const batchSize = 32
 
 	for epoch := range numEpochs {
-		totalLoss := 0.0
+		var totalLoss float32 = 0.0
 		batchCount := 0
 
 		// Mini-batch training
@@ -108,20 +108,20 @@ func TestMNIST(t *testing.T) {
 			batchCount++
 		}
 
-		avgLoss := totalLoss / float64(batchCount)
+		avgLoss := totalLoss / float32(batchCount)
 		t.Logf("Epoch %d, Avg Loss: %f", epoch, avgLoss)
 
 	}
 
 	// Evaluate on full test set
 	numTestSamples := len(testData.Images)
-	testInputs := make([]float64, numTestSamples*28*28)
+	testInputs := make([]float32, numTestSamples*28*28)
 	testTargets := make([]uint8, numTestSamples)
 
 	for i, imgRaw := range testData.Images {
 		img := prepareImage(imgRaw)
 		for j, v := range img {
-			testInputs[i*28*28+j] = float64(v)
+			testInputs[i*28*28+j] = float32(v)
 		}
 		testTargets[i] = uint8(testData.Labels[i])
 	}
@@ -158,7 +158,7 @@ func TestMNIST(t *testing.T) {
 		}
 	}
 
-	accuracy := float64(correctPredictions) / float64(numTestSamples) * 100.0
+	accuracy := float32(correctPredictions) / float32(numTestSamples) * 100.0
 	t.Logf("Test Accuracy: %.2f%% (%d/%d correct)", accuracy, correctPredictions, numTestSamples)
 
 	// Assert that we achieve at least 95% accuracy

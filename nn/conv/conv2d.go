@@ -19,8 +19,8 @@ type Conv2D struct {
 
 func NewConv2D(inChannels, outChannels, kernelHeight, kernelWidth int) *Conv2D {
 	kernelSize := outChannels * inChannels * kernelHeight * kernelWidth
-	kernel := tensor.NewTensor(make([]float64, kernelSize), []int{outChannels, inChannels, kernelHeight, kernelWidth})
-	bias := tensor.NewTensor(make([]float64, outChannels), []int{outChannels})
+	kernel := tensor.NewTensor(make([]float32, kernelSize), []int{outChannels, inChannels, kernelHeight, kernelWidth})
+	bias := tensor.NewTensor(make([]float32, outChannels), []int{outChannels})
 
 	kernel.RequiresGrad = true
 	bias.RequiresGrad = true

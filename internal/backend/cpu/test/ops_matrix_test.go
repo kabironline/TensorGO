@@ -13,9 +13,9 @@ func BenchmarkMatMulCPU(b *testing.B) {
 	backend.SetDefaultBackend(cpu)
 
 	size := 4096
-	h_a := make([]float64, size*size)
-	h_b := make([]float64, size*size)
-	h_c := make([]float64, size*size)
+	h_a := make([]float32, size*size)
+	h_b := make([]float32, size*size)
+	h_c := make([]float32, size*size)
 
 	// Warmup
 	for i := 0; i < 10; i++ {
@@ -28,7 +28,7 @@ func BenchmarkMatMulCPU(b *testing.B) {
 		)
 	}
 	b.ResetTimer()
-	b.SetBytes(int64(size * size * 8 * 3))
+	b.SetBytes(int64(size * size * 4 * 3))
 
 	// Benchmark
 	for i := 0; i < b.N; i++ {

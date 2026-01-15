@@ -6,10 +6,10 @@ import (
 
 type SGD struct {
 	Params []*tensor.Tensor
-	LR     float64
+	LR     float32
 }
 
-func NewSGD(params []*tensor.Tensor, lr float64) *SGD {
+func NewSGD(params []*tensor.Tensor, lr float32) *SGD {
 	return &SGD{Params: params, LR: lr}
 }
 

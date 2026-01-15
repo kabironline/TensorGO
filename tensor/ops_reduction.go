@@ -11,7 +11,7 @@ func (t *Tensor) Sum() *Tensor {
 	tContig := Contiguous(t)
 	total := t.Device.Sum(tContig.Data, len(tContig.Data))
 
-	out := NewTensor([]float64{total}, []int{1}, t)
+	out := NewTensor([]float32{total}, []int{1}, t)
 	// --- Backward function ---
 	// During backpropagation, the gradient from the output (a single value)
 	// needs to be distributed back to all elements of the original tensor.
@@ -34,13 +34,13 @@ func (t *Tensor) Mean() *Tensor {
 	tContig := Contiguous(t)
 	mean := t.Device.Mean(tContig.Data, len(tContig.Data))
 
-	out := NewTensor([]float64{mean}, []int{1}, t)
+	out := NewTensor([]float32{mean}, []int{1}, t)
 	// --- Backward function ---
 	// During backpropagation, the gradient from the output (a single value)
 	// needs to be distributed back to all elements of the original tensor.
 	out.Backward = func() {
 		gradOut := out.Grad[0] // Gradient from the output tensor
-		gradPerElement := gradOut / float64(TotalSize(t.Shape))
+		gradPerElement := gradOut / float32(TotalSize(t.Shape))
 
 		grad := pools.GetBuffer(TotalSize(t.Shape))
 		for i := range grad {
@@ -54,7 +54,7 @@ func (t *Tensor) Mean() *Tensor {
 
 // ReduceSumTo matches the gradient shape of 'out' to the shape of 'parent'
 // by summing across broadcasted dimensions.
-func ReduceSumTo(dev backend.Backend, grad []float64, gradShape, parentShape []int) []float64 {
+func ReduceSumTo(dev backend.Backend, grad []float32, gradShape, parentShape []int) []float32 {
 	// If shapes match exactly, no reduction needed
 	if shapesEqual(gradShape, parentShape) {
 		return grad

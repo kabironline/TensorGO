@@ -4,7 +4,7 @@ import "math"
 
 // PoolOps implementation for CPU
 
-func (b *CPUBackend) MaxPool2d(data []float64, shape, strides []int, kH, kW, stride, padding int) ([]float64, []int) {
+func (b *CPUBackend) MaxPool2d(data []float32, shape, strides []int, kH, kW, stride, padding int) ([]float32, []int) {
 	N, C, H, W := shape[0], shape[1], shape[2], shape[3]
 
 	outH := (H+2*padding-kH)/stride + 1
@@ -23,7 +23,7 @@ func (b *CPUBackend) MaxPool2d(data []float64, shape, strides []int, kH, kW, str
 
 			for oh := 0; oh < outH; oh++ {
 				for ow := 0; ow < outW; ow++ {
-					maxVal := -math.MaxFloat64
+					var maxVal float32 = -math.MaxFloat32
 					maxIdx := -1
 
 					for kh := 0; kh < kH; kh++ {
@@ -52,7 +52,7 @@ func (b *CPUBackend) MaxPool2d(data []float64, shape, strides []int, kH, kW, str
 	return outData, maxIndices
 }
 
-func (b *CPUBackend) MaxPool2dBackward(grad []float64, indices []int, xShape []int) []float64 {
+func (b *CPUBackend) MaxPool2dBackward(grad []float32, indices []int, xShape []int) []float32 {
 	xGrad := b.Allocate(xShape[0] * xShape[1] * xShape[2] * xShape[3])
 
 	// Since maxIndices are unique points in the input, we don't need atomic additions

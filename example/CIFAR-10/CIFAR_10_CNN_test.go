@@ -99,13 +99,13 @@ func TestCIFAR10_CNN(t *testing.T) {
 		numTrainSamples = len(trainData)
 	}
 
-	trainInputs := make([]float64, numTrainSamples*3*32*32)
-	trainTargets := make([]float64, numTrainSamples*10)
+	trainInputs := make([]float32, numTrainSamples*3*32*32)
+	trainTargets := make([]float32, numTrainSamples*10)
 
 	for i := 0; i < numTrainSamples; i++ {
 		imgData := trainData[i].imageData
 		for j, v := range imgData {
-			trainInputs[i*3*32*32+j] = float64(v) / 255.0
+			trainInputs[i*3*32*32+j] = float32(v) / 255.0
 		}
 		label := trainData[i].label
 		for k := 0; k < 10; k++ {
@@ -146,7 +146,7 @@ func TestCIFAR10_CNN(t *testing.T) {
 	fmt.Printf("Starting CNN training on %d samples...\n", numTrainSamples)
 
 	for epoch := 0; epoch < numEpochs; epoch++ {
-		totalLoss := 0.0
+		var totalLoss float32 = 0.0
 		batchCount := 0
 
 		for batch := 0; batch*batchSize < numTrainSamples; batch++ {
@@ -184,7 +184,7 @@ func TestCIFAR10_CNN(t *testing.T) {
 			}
 		}
 		if batchCount > 0 {
-			fmt.Printf("Epoch %d completed. Average Loss: %.4f\n", epoch+1, totalLoss/float64(batchCount))
+			fmt.Printf("Epoch %d completed. Average Loss: %.4f\n", epoch+1, totalLoss/float32(batchCount))
 		} else {
 			fmt.Printf("Epoch %d completed. No batches processed.\n", epoch+1)
 		}
@@ -200,9 +200,9 @@ func TestCIFAR10_CNN(t *testing.T) {
 
 	for i := 0; i < numTestSamples; i++ {
 		imgData := testData[i].imageData
-		imgDataFloat := make([]float64, 3*32*32)
+		imgDataFloat := make([]float32, 3*32*32)
 		for j, v := range imgData {
-			imgDataFloat[j] = float64(v) / 255.0
+			imgDataFloat[j] = float32(v) / 255.0
 		}
 
 		input := tensor.NewTensor(imgDataFloat, []int{1, 3, 32, 32})
@@ -223,7 +223,7 @@ func TestCIFAR10_CNN(t *testing.T) {
 		}
 	}
 
-	accuracy := float64(correct) / float64(numTestSamples) * 100
+	accuracy := float32(correct) / float32(numTestSamples) * 100
 	fmt.Printf("Test Accuracy: %.2f%%\n", accuracy)
 	assert.Greater(t, accuracy, 20.0, "Accuracy should be at least 20%")
 }

@@ -14,35 +14,35 @@ func init() {
 		size := 1 << i // Calculate 2^i
 		pools[i] = &sync.Pool{
 			New: func() any {
-				return make([]float64, 0, size)
+				return make([]float32, 0, size)
 			},
 		}
 	}
 }
 
-func GetBuffer(size int) []float64 {
+func GetBuffer(size int) []float32 {
 	// 1. Find the bucket index (Log2 logic)
 	// You can use bits.Len(uint(size)) from "math/bits" for speed
 	bucket := bits.Len(uint(size - 1))
 	bucket = max(bucket, 6)
 	if bucket >= 29 {
 		fmt.Printf("Too big buffer requested: %d elements\n", size)
-		return make([]float64, size)
+		return make([]float32, size)
 	} // Too big for pool
 
 	// 2. Get from specific pool
-	ptr := pools[bucket].Get().([]float64)
+	ptr := pools[bucket].Get().([]float32)
 
 	// 3. Resize capacity if needed (rare, but safety check)
 	if cap(ptr) < size {
-		return make([]float64, size)
+		return make([]float32, size)
 	}
 
 	// 4. Set length
 	return ptr[:size]
 }
 
-func GetZeroedBuffer(size int) []float64 {
+func GetZeroedBuffer(size int) []float32 {
 	buf := GetBuffer(size)
 	// Zero only the used length portion:
 	for i := range buf {
@@ -51,7 +51,7 @@ func GetZeroedBuffer(size int) []float64 {
 	return buf
 }
 
-func PutBuffer(buf []float64) {
+func PutBuffer(buf []float32) {
 	bucket := bits.Len(uint(cap(buf) - 1))
 	if bucket >= 6 && bucket < 29 {
 		pools[bucket].Put(buf)

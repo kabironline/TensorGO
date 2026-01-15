@@ -215,7 +215,11 @@ func (a *Tensor) Inverse() *Tensor {
 	}
 
 	aContig := Contiguous(a)
-	mA := mat.NewDense(aContig.Shape[0], aContig.Shape[1], aContig.Data)
+	aContigF64 := make([]float64, len(aContig.Data))
+	for i, v := range aContig.Data {
+		aContigF64[i] = float64(v)
+	}
+	mA := mat.NewDense(aContig.Shape[0], aContig.Shape[1], aContigF64)
 
 	var mInv mat.Dense
 	err := mInv.Inverse(mA)
@@ -224,29 +228,33 @@ func (a *Tensor) Inverse() *Tensor {
 	}
 
 	resultData := mInv.RawMatrix().Data
-	out := NewTensor(resultData, []int{aContig.Shape[0], aContig.Shape[1]}, a)
+	resultDataCopy := pools.GetBuffer(len(resultData))
+
+	for i, v := range resultData {
+		resultDataCopy[i] = float32(v)
+	}
+
+	out := NewTensor(resultDataCopy, []int{aContig.Shape[0], aContig.Shape[1]}, a)
 	// --- AUTOGRAD LOGIC START ---
 	out.Backward = func() {
 		// Y = X^-1
 		// dL/dX = - (Y^T) * GradOut * (Y^T)
-		mY := mat.NewDense(out.Shape[0], out.Shape[1], out.Data)
-		mGradOut := mat.NewDense(out.Shape[0], out.Shape[1], out.Grad)
+		mY := mat.NewDense(out.Shape[0], out.Shape[1], resultData)
+		mGradOut := mat.NewDense(out.Shape[0], out.Shape[1], resultData)
 
 		// Temporary: (Y^T) * GradOut
-		tmpData := pools.GetBuffer(out.Shape[0] * out.Shape[1])
+		tmpData := make([]float64, out.Shape[0]*out.Shape[1])
 		tmp := mat.NewDense(out.Shape[0], out.Shape[1], tmpData)
 		tmp.Mul(mY.T(), mGradOut)
 
 		// Final: tmp * (Y^T)
-		finalGradData := pools.GetBuffer(out.Shape[0] * out.Shape[1])
+		finalGradData := make([]float64, out.Shape[0]*out.Shape[1])
 		finalGrad := mat.NewDense(out.Shape[0], out.Shape[1], finalGradData)
 		finalGrad.Mul(tmp, mY.T())
 
 		for i, val := range finalGrad.RawMatrix().Data {
-			a.Grad[i] -= val // Note the subtraction (negative sign in formula)
+			a.Grad[i] -= float32(val) // Note the subtraction (negative sign in formula)
 		}
-		pools.PutBuffer(tmpData)
-		pools.PutBuffer(finalGradData)
 	}
 	return out
 }

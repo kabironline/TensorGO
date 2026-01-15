@@ -11,7 +11,7 @@ CUDA matrix multiplication was performing poorly on RTX 3070:
 ## Issues Found & Fixed
 
 ### 1. **Type Mismatch Bug (CRITICAL)** ❌→✅
-**Problem:** Code was using `cublasSgemm` (float32) with `[]float64` (float64) data
+**Problem:** Code was using `cublasSgemm` (float32) with `[]float32` (float32) data
 - Caused incorrect data interpretation
 - GPU reading 4 bytes per element instead of 8
 - Wrong stride calculations
@@ -82,7 +82,7 @@ func NewIdentityTensor(size int) *Tensor {
     
     if dev.IsGPU() {
         if transfer, ok := dev.(backend.MemoryTransfer); ok {
-            h_data := make([]float64, size*size)  // Create on CPU
+            h_data := make([]float32, size*size)  // Create on CPU
             for i := 0; i < size; i++ {
                 h_data[i*size+i] = 1.0
             }
@@ -116,7 +116,7 @@ Efficiency: ~37% (reasonable for memory-bound ops)
 ### Why Still Limited?
 RTX 3070 has severe FP64 limitations:
 - **FP32 (float32):** ~20 TFLOPS
-- **FP64 (float64):** ~0.3 TFLOPS (**64x slower!**)
+- **FP64 (float32):** ~0.3 TFLOPS (**64x slower!**)
 - Consumer gaming GPU, not scientific computing optimized
 
 ## What Was Changed
@@ -133,9 +133,9 @@ RTX 3070 has severe FP64 limitations:
 ## Next Steps (TODO)
 
 ### High Priority
-1. **Convert Float64 → Float32 (Biggest Gain)**
+1. **Convert float32 → Float32 (Biggest Gain)**
    - Expected speedup: 20-60x on RTX 3070
-   - Requires converting entire codebase: `[]float64` → `[]float32`
+   - Requires converting entire codebase: `[]float32` → `[]float32`
    - Files to modify:
      - `tensor/tensor.go` - Tensor.Data type
      - `backend/backend.go` - Interface types

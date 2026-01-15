@@ -16,8 +16,8 @@ type Linear struct {
 }
 
 func NewLinear(inFeatures, outFeatures int) *Linear {
-	w := tensor.NewTensor(make([]float64, inFeatures*outFeatures), []int{inFeatures, outFeatures})
-	b := tensor.NewTensor(make([]float64, outFeatures), []int{outFeatures})
+	w := tensor.NewTensor(make([]float32, inFeatures*outFeatures), []int{inFeatures, outFeatures})
+	b := tensor.NewTensor(make([]float32, outFeatures), []int{outFeatures})
 
 	w.RequiresGrad = true
 	b.RequiresGrad = true

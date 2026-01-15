@@ -3,8 +3,8 @@ package cpu
 import "math"
 
 // Sum computes the sum of all elements
-func (bk *CPUBackend) Sum(a []float64, size int) float64 {
-	var sum float64
+func (bk *CPUBackend) Sum(a []float32, size int) float32 {
+	var sum float32
 	for i := range size {
 		sum += a[i]
 	}
@@ -12,12 +12,12 @@ func (bk *CPUBackend) Sum(a []float64, size int) float64 {
 }
 
 // Mean computes the mean of all elements
-func (bk *CPUBackend) Mean(a []float64, size int) float64 {
-	return bk.Sum(a, size) / float64(size)
+func (bk *CPUBackend) Mean(a []float32, size int) float32 {
+	return bk.Sum(a, size) / float32(size)
 }
 
 // Max finds the maximum element
-func (bk *CPUBackend) Max(a []float64, size int) float64 {
+func (bk *CPUBackend) Max(a []float32, size int) float32 {
 	maxVal := a[0]
 	for i := 1; i < size; i++ {
 		if a[i] > maxVal {
@@ -28,7 +28,7 @@ func (bk *CPUBackend) Max(a []float64, size int) float64 {
 }
 
 // Min finds the minimum element
-func (bk *CPUBackend) Min(a []float64, size int) float64 {
+func (bk *CPUBackend) Min(a []float32, size int) float32 {
 	minVal := a[0]
 	for i := 1; i < size; i++ {
 		if a[i] < minVal {
@@ -39,7 +39,7 @@ func (bk *CPUBackend) Min(a []float64, size int) float64 {
 }
 
 // SumAxis computes sum along specified axis
-func (bk *CPUBackend) SumAxis(a []float64, shape []int, axis int) []float64 {
+func (bk *CPUBackend) SumAxis(a []float32, shape []int, axis int) []float32 {
 	outShape := make([]int, len(shape))
 	copy(outShape, shape)
 	outShape[axis] = 1
@@ -82,7 +82,7 @@ func (bk *CPUBackend) SumAxis(a []float64, shape []int, axis int) []float64 {
 }
 
 // MaxAxis computes max along specified axis
-func (bk *CPUBackend) MaxAxis(a []float64, shape []int, axis int) []float64 {
+func (bk *CPUBackend) MaxAxis(a []float32, shape []int, axis int) []float32 {
 	// Simple implementation, similar to SumAxis but with Max
 	outShape := make([]int, len(shape))
 	copy(outShape, shape)
@@ -95,7 +95,7 @@ func (bk *CPUBackend) MaxAxis(a []float64, shape []int, axis int) []float64 {
 	out := bk.Allocate(size)
 	// Initialize with very small value
 	for i := range out {
-		out[i] = math.Inf(-1)
+		out[i] = float32(math.Inf(-1))
 	}
 
 	strides := bk.computeStrides(shape)
@@ -121,9 +121,9 @@ func (bk *CPUBackend) MaxAxis(a []float64, shape []int, axis int) []float64 {
 }
 
 // MeanAxis computes mean along specified axis
-func (bk *CPUBackend) MeanAxis(a []float64, shape []int, axis int) []float64 {
+func (bk *CPUBackend) MeanAxis(a []float32, shape []int, axis int) []float32 {
 	sum := bk.SumAxis(a, shape, axis)
-	count := float64(shape[axis])
+	count := float32(shape[axis])
 	for i := range sum {
 		sum[i] /= count
 	}

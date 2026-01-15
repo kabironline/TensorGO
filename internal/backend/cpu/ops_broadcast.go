@@ -1,7 +1,7 @@
 package cpu
 
 import (
-	"gonum.org/v1/gonum/floats"
+	"gonum.org/v1/gonum/blas/blas32"
 )
 
 // getTotalSize computes the total number of elements in a shape.
@@ -27,13 +27,28 @@ func getStrides(shape []int) []int {
 // BroadcastAdd performs broadcasted element-wise addition using optimized BLAS where possible.
 // For contiguous same-shape tensors, uses Gonum's SIMD-optimized AddTo.
 // For different shapes, uses stride-aware iteration.
-func (b *CPUBackend) BroadcastAdd(a, ai []float64, aShape, bShape, outShape []int) []float64 {
+func (b *CPUBackend) BroadcastAdd(a, ai []float32, aShape, bShape, outShape []int) []float32 {
 	outSize := getTotalSize(outShape)
-	out := make([]float64, outSize)
+	out := b.Allocate(outSize)
 
 	// Fast path: identical shapes, both contiguous, offset 0
 	if len(aShape) == len(bShape) && shapesEqual(aShape, bShape) {
-		floats.AddTo(out, a, ai)
+		// copy a into out and perform out += ai with BLAS
+		copy(out, a)
+		blas32.Axpy(
+			float32(1.0),
+			blas32.Vector{
+				N:    outSize,
+				Inc:  1,
+				Data: ai,
+			},
+			blas32.Vector{
+				N:    outSize,
+				Inc:  1,
+				Data: out,
+			},
+		)
+
 		return out
 	}
 
@@ -91,9 +106,9 @@ func (b *CPUBackend) BroadcastAdd(a, ai []float64, aShape, bShape, outShape []in
 }
 
 // BroadcastSub performs broadcasted element-wise subtraction.
-func (b *CPUBackend) BroadcastSub(a, ai []float64, aShape, bShape, outShape []int) []float64 {
+func (b *CPUBackend) BroadcastSub(a, ai []float32, aShape, bShape, outShape []int) []float32 {
 	outSize := getTotalSize(outShape)
-	out := make([]float64, outSize)
+	out := make([]float32, outSize)
 
 	// Fast path: identical shapes, both contiguous
 	if len(aShape) == len(bShape) && shapesEqual(aShape, bShape) {
@@ -149,9 +164,9 @@ func (b *CPUBackend) BroadcastSub(a, ai []float64, aShape, bShape, outShape []in
 }
 
 // BroadcastMul performs broadcasted element-wise multiplication.
-func (b *CPUBackend) BroadcastMul(a, ai []float64, aShape, bShape, outShape []int) []float64 {
+func (b *CPUBackend) BroadcastMul(a, ai []float32, aShape, bShape, outShape []int) []float32 {
 	outSize := getTotalSize(outShape)
-	out := make([]float64, outSize)
+	out := make([]float32, outSize)
 
 	// Fast path: identical shapes, both contiguous
 	if len(aShape) == len(bShape) && shapesEqual(aShape, bShape) {
@@ -207,9 +222,9 @@ func (b *CPUBackend) BroadcastMul(a, ai []float64, aShape, bShape, outShape []in
 }
 
 // BroadcastDiv performs broadcasted element-wise division.
-func (b *CPUBackend) BroadcastDiv(a, ai []float64, aShape, bShape, outShape []int) []float64 {
+func (b *CPUBackend) BroadcastDiv(a, ai []float32, aShape, bShape, outShape []int) []float32 {
 	outSize := getTotalSize(outShape)
-	out := make([]float64, outSize)
+	out := make([]float32, outSize)
 
 	// Fast path: identical shapes, both contiguous
 	if len(aShape) == len(bShape) && shapesEqual(aShape, bShape) {

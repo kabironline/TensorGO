@@ -1,7 +1,7 @@
 package cpu
 
 // Relu applies the ReLU activation function element-wise: out = max(0, x)
-func (b *CPUBackend) ReLU(a []float64, size int) []float64 {
+func (b *CPUBackend) ReLU(a []float32, size int) []float32 {
 	out := b.Allocate(size)
 	b.pool.Process(size, func(start, end int) {
 		for i := start; i < end; i++ {
@@ -16,7 +16,7 @@ func (b *CPUBackend) ReLU(a []float64, size int) []float64 {
 }
 
 // ReLUBackward computes the gradient of the ReLU activation function: out = grad * (input > 0)
-func (b *CPUBackend) ReLUBackward(grad, input []float64, size int) []float64 {
+func (b *CPUBackend) ReLUBackward(grad, input []float32, size int) []float32 {
 	out := b.Allocate(size)
 	b.pool.Process(size, func(start, end int) {
 		for i := start; i < end; i++ {

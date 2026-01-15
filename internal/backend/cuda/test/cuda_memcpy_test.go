@@ -12,7 +12,7 @@ func TestCUDAMemoryTransfer(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Create test data
-	input := []float64{1.0, 2.0, 3.0, 4.0, 5.0}
+	input := []float32{1.0, 2.0, 3.0, 4.0, 5.0}
 
 	// Move to GPU
 	gpuData := b.ToDevice(input)

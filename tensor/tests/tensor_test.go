@@ -11,7 +11,7 @@ import (
 // --- Unit Tests ---
 
 func TestNewTensor(t *testing.T) {
-	data := []float64{1, 2, 3, 4, 5, 6}
+	data := []float32{1, 2, 3, 4, 5, 6}
 	shape := []int{2, 3}
 	tens := tensor.NewTensor(data, shape)
 
@@ -60,7 +60,7 @@ func TestNewIdentityTensor(t *testing.T) {
 }
 
 func TestTranspose(t *testing.T) {
-	data := []float64{1, 2, 3, 4, 5, 6}
+	data := []float32{1, 2, 3, 4, 5, 6}
 	shape := []int{2, 3}
 	tens := tensor.NewTensor(data, shape)
 
@@ -85,8 +85,8 @@ func TestTranspose(t *testing.T) {
 
 func TestBroadcastAdd(t *testing.T) {
 	// Test broadcasting: (1, 3) + (3, 1) -> (3, 3)
-	a := tensor.NewTensor([]float64{1, 2, 3}, []int{1, 3})
-	b := tensor.NewTensor([]float64{4, 5, 6}, []int{3, 1})
+	a := tensor.NewTensor([]float32{1, 2, 3}, []int{1, 3})
+	b := tensor.NewTensor([]float32{4, 5, 6}, []int{3, 1})
 
 	// Result should be:
 	// [[1+4, 2+4, 3+4],
@@ -95,13 +95,13 @@ func TestBroadcastAdd(t *testing.T) {
 	// => [5, 6, 7, 6, 7, 8, 7, 8, 9]
 	res := a.Add(b)
 
-	expected := []float64{5, 6, 7, 6, 7, 8, 7, 8, 9}
+	expected := []float32{5, 6, 7, 6, 7, 8, 7, 8, 9}
 	if tensor.TotalSize(res.Shape) != 9 {
 		t.Fatalf("Expected result size 9, got %d", tensor.TotalSize(res.Shape))
 	}
 
 	for i, v := range expected {
-		if math.Abs(res.Data[i]-v) > 1e-9 {
+		if math.Abs(float64(res.Data[i]-v)) > 1e-9 {
 			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data[i])
 		}
 	}
@@ -109,23 +109,23 @@ func TestBroadcastAdd(t *testing.T) {
 
 func TestBroadcastMul(t *testing.T) {
 	// Test broadcasting: (2, 2) * (2,) -> (2, 2)
-	a := tensor.NewTensor([]float64{1, 2, 3, 4}, []int{2, 2})
-	b := tensor.NewTensor([]float64{10, 20}, []int{2})
+	a := tensor.NewTensor([]float32{1, 2, 3, 4}, []int{2, 2})
+	b := tensor.NewTensor([]float32{10, 20}, []int{2})
 
 	// b broadcasts to [[10, 20], [10, 20]]
 	// Result: [[10, 40], [30, 80]]
 	res := tensor.BroadcastMulOp(a, b)
 
-	expected := []float64{10, 40, 30, 80}
+	expected := []float32{10, 40, 30, 80}
 	for i, v := range expected {
-		if math.Abs(res.Data[i]-v) > 1e-9 {
+		if math.Abs(float64(res.Data[i]-v)) > 1e-9 {
 			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data[i])
 		}
 	}
 }
 
 func TestAtSetAt(t *testing.T) {
-	data := make([]float64, 6)
+	data := make([]float32, 6)
 	tens := tensor.NewTensor(data, []int{2, 3})
 
 	// Set a value and read it back
@@ -145,23 +145,23 @@ func TestAtSetAt(t *testing.T) {
 
 func TestMatMul(t *testing.T) {
 	// (2, 3) * (3, 2) -> (2, 2)
-	a := tensor.NewTensor([]float64{1, 2, 3, 4, 5, 6}, []int{2, 3})
-	b := tensor.NewTensor([]float64{7, 8, 9, 10, 11, 12}, []int{3, 2})
+	a := tensor.NewTensor([]float32{1, 2, 3, 4, 5, 6}, []int{2, 3})
+	b := tensor.NewTensor([]float32{7, 8, 9, 10, 11, 12}, []int{3, 2})
 
 	// [1*7+2*9+3*11, 1*8+2*10+3*12]  => [58, 64]
 	// [4*7+5*9+6*11, 4*8+5*10+6*12]  => [139, 154]
 	res := a.MatMul(b)
 
-	expected := []float64{58, 64, 139, 154}
+	expected := []float32{58, 64, 139, 154}
 	for i, v := range expected {
-		if math.Abs(res.Data[i]-v) > 1e-9 {
+		if math.Abs(float64(res.Data[i]-v)) > 1e-9 {
 			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data[i])
 		}
 	}
 }
 
 func TestContiguous(t *testing.T) {
-	data := []float64{1, 2, 3, 4, 5, 6}
+	data := []float32{1, 2, 3, 4, 5, 6}
 	tens := tensor.NewTensor(data, []int{2, 3})
 
 	transposed := tens.Transpose([]int{1, 0})
@@ -177,7 +177,7 @@ func TestContiguous(t *testing.T) {
 	// Check data order in contiguous copy
 	// Transposed was: [[1, 4], [2, 5], [3, 6]]
 	// Flat: [1, 4, 2, 5, 3, 6]
-	expected := []float64{1, 4, 2, 5, 3, 6}
+	expected := []float32{1, 4, 2, 5, 3, 6}
 	for i, v := range expected {
 		if contig.Data[i] != v {
 			t.Errorf("At index %d: expected %f, got %f", i, v, contig.Data[i])
@@ -190,8 +190,8 @@ func TestContiguous(t *testing.T) {
 func BenchmarkBroadcastAddFastPath(b *testing.B) {
 	// Large contiguous addition (Gonum path)
 	size := 1000000
-	dataA := make([]float64, size)
-	dataB := make([]float64, size)
+	dataA := make([]float32, size)
+	dataB := make([]float32, size)
 	tensA := tensor.NewTensor(dataA, []int{size})
 	tensB := tensor.NewTensor(dataB, []int{size})
 
@@ -203,8 +203,8 @@ func BenchmarkBroadcastAddFastPath(b *testing.B) {
 
 func BenchmarkBroadcastAddSlowPath(b *testing.B) {
 	// Broadcasting 1000x1000 + 1x1000 (Stride Iterator path)
-	dataA := make([]float64, 1000*1000)
-	dataB := make([]float64, 1000)
+	dataA := make([]float32, 1000*1000)
+	dataB := make([]float32, 1000)
 	tensA := tensor.NewTensor(dataA, []int{1000, 1000})
 	tensB := tensor.NewTensor(dataB, []int{1, 1000})
 
@@ -217,8 +217,8 @@ func BenchmarkBroadcastAddSlowPath(b *testing.B) {
 func BenchmarkMatMul(b *testing.B) {
 	// 256x256 matrix multiplication
 	size := (28 * 28)
-	dataA := make([]float64, size*size)
-	dataB := make([]float64, size*size)
+	dataA := make([]float32, size*size)
+	dataB := make([]float32, size*size)
 	tensA := tensor.NewTensor(dataA, []int{size, size})
 	tensB := tensor.NewTensor(dataB, []int{size, size})
 
@@ -229,7 +229,7 @@ func BenchmarkMatMul(b *testing.B) {
 
 func BenchmarkTranspose(b *testing.B) {
 	// Transpose is O(1) metadata change
-	tens := tensor.NewTensor(make([]float64, 1000*1000), []int{1000, 1000})
+	tens := tensor.NewTensor(make([]float32, 1000*1000), []int{1000, 1000})
 	b.ResetTimer()
 	for b.Loop() {
 		tens.Transpose([]int{1, 0})

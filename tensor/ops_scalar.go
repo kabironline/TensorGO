@@ -1,7 +1,7 @@
 package tensor
 
 // AddScalar returns a new Tensor with each element increased by the scalar value.
-func (t *Tensor) AddScalar(scalar float64) *Tensor {
+func (t *Tensor) AddScalar(scalar float32) *Tensor {
 	tContig := Contiguous(t)
 	outData := t.Device.AddScalar(tContig.Data, scalar, len(tContig.Data))
 
@@ -13,7 +13,7 @@ func (t *Tensor) AddScalar(scalar float64) *Tensor {
 }
 
 // SubScalar returns a new Tensor with the scalar value subtracted from each element.
-func (t *Tensor) SubScalar(scalar float64) *Tensor {
+func (t *Tensor) SubScalar(scalar float32) *Tensor {
 	tContig := Contiguous(t)
 	outData := t.Device.SubScalar(tContig.Data, scalar, len(tContig.Data))
 
@@ -25,7 +25,7 @@ func (t *Tensor) SubScalar(scalar float64) *Tensor {
 }
 
 // MulScalar returns a new Tensor with each element multiplied by the scalar value.
-func (t *Tensor) MulScalar(scalar float64) *Tensor {
+func (t *Tensor) MulScalar(scalar float32) *Tensor {
 	tContig := Contiguous(t)
 	outData := t.Device.MulScalar(tContig.Data, scalar, len(tContig.Data))
 
@@ -38,7 +38,7 @@ func (t *Tensor) MulScalar(scalar float64) *Tensor {
 }
 
 // DivScalar returns a new Tensor with each element divided by the scalar value.
-func (t *Tensor) DivScalar(scalar float64) *Tensor {
+func (t *Tensor) DivScalar(scalar float32) *Tensor {
 	tContig := Contiguous(t)
 	outData := t.Device.DivScalar(tContig.Data, scalar, len(tContig.Data))
 

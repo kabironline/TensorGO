@@ -31,14 +31,14 @@ func TestMNISTCNN(t *testing.T) {
 		numTrainSamples = len(trainData.Images)
 	}
 
-	trainInputs := make([]float64, numTrainSamples*1*28*28)
-	trainTargets := make([]float64, numTrainSamples*10)
+	trainInputs := make([]float32, numTrainSamples*1*28*28)
+	trainTargets := make([]float32, numTrainSamples*10)
 
 	for i := 0; i < numTrainSamples; i++ {
 		imgRaw := trainData.Images[i]
 		img := prepareImageForModel(imgRaw)
 		for j, v := range img {
-			trainInputs[i*28*28+j] = float64(v)
+			trainInputs[i*28*28+j] = float32(v)
 		}
 		label := trainData.Labels[i]
 		for k := range 10 {
@@ -79,7 +79,7 @@ func TestMNISTCNN(t *testing.T) {
 	fmt.Printf("Starting CNN training on %d samples...\n", numTrainSamples)
 
 	for epoch := range numEpochs {
-		totalLoss := 0.0
+		var totalLoss float32 = 0.0
 		batchCount := 0
 
 		for batch := 0; batch*batchSize < numTrainSamples; batch++ {
@@ -116,7 +116,7 @@ func TestMNISTCNN(t *testing.T) {
 				fmt.Printf("Epoch %d, Batch %d, Loss: %.4f\n", epoch+1, batchCount, loss.Data[0])
 			}
 		}
-		fmt.Printf("Epoch %d completed. Average Loss: %.4f\n", epoch+1, totalLoss/float64(batchCount))
+		fmt.Printf("Epoch %d completed. Average Loss: %.4f\n", epoch+1, totalLoss/float32(batchCount))
 	}
 
 	// Evaluation
@@ -127,9 +127,9 @@ func TestMNISTCNN(t *testing.T) {
 	for i := 0; i < numTestSamples; i++ {
 		imgRaw := testData.Images[i]
 		img := prepareImageForModel(imgRaw)
-		imgData := make([]float64, 28*28)
+		imgData := make([]float32, 28*28)
 		for j, v := range img {
-			imgData[j] = float64(v)
+			imgData[j] = float32(v)
 		}
 
 		input := tensor.NewTensor(imgData, []int{1, 1, 28, 28})
@@ -150,7 +150,7 @@ func TestMNISTCNN(t *testing.T) {
 		}
 	}
 
-	accuracy := float64(correct) / float64(numTestSamples) * 100
+	accuracy := float32(correct) / float32(numTestSamples) * 100
 	fmt.Printf("Test Accuracy: %.2f%%\n", accuracy)
 	assert.Greater(t, accuracy, 80.0, "Accuracy should be at least 80%")
 }

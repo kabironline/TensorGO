@@ -22,7 +22,7 @@ func CrossEntropyLoss(predictions, targets *tensor.Tensor) *tensor.Tensor {
 	targets = targets.To(predictions.Device)
 
 	// predictions + eps
-	eps := 1e-15
+	var eps float32 = 1e-15
 	pPlusEps := predictions.AddScalar(eps)
 	logP := pPlusEps.Log()
 
@@ -32,9 +32,9 @@ func CrossEntropyLoss(predictions, targets *tensor.Tensor) *tensor.Tensor {
 	// negative sum
 	negSum := sum.MulScalar(-1.0)
 
-	batchSize := 1.0
+	var batchSize float32 = 1.0
 	if len(predictions.Shape) > 0 {
-		batchSize = float64(predictions.Shape[0])
+		batchSize = float32(predictions.Shape[0])
 	}
 
 	return negSum.DivScalar(batchSize)

@@ -4,12 +4,12 @@ import (
 	"math"
 
 	"github.com/kabironline/nanograd/backend"
-	"gonum.org/v1/gonum/floats"
+	"gonum.org/v1/gonum/blas/blas32"
 )
 
 type Tensor struct {
-	Data    []float64
-	Grad    []float64
+	Data    []float32
+	Grad    []float32
 	Shape   []int
 	Strides []int
 	Parents []*Tensor // Tensors that were used to compute this tensor
@@ -24,7 +24,7 @@ type Tensor struct {
 	contiguous bool
 }
 
-func NewTensor(data []float64, shape []int, parents ...*Tensor) *Tensor {
+func NewTensor(data []float32, shape []int, parents ...*Tensor) *Tensor {
 	var dev backend.Backend
 	requiresGrad := false
 	if len(parents) > 0 {
@@ -79,7 +79,7 @@ func NewIdentityTensor(size int) *Tensor {
 	// For GPU backends, create on CPU then copy to device
 	if dev.IsGPU() {
 		if transfer, ok := dev.(backend.MemoryTransfer); ok {
-			h_data := make([]float64, size*size)
+			h_data := make([]float32, size*size)
 			for i := 0; i < size; i++ {
 				h_data[i*size+i] = 1.0
 			}
@@ -155,7 +155,7 @@ func (t *Tensor) RandomInit() {
 		fanOut = 1
 	}
 
-	stdDev := math.Sqrt(2.0 / float64(fanIn+fanOut))
+	stdDev := float32(math.Sqrt(2.0 / float64(fanIn+fanOut)))
 	t.Device.Normal(t.Data, 0.0, stdDev, len(t.Data))
 }
 
@@ -167,7 +167,7 @@ func (t *Tensor) ZeroInit() {
 // AccumulateGrad adds the given gradient data to the tensor's gradient.
 // It handles non-contiguous tensors (views) correctly by mapping logical indices to physical indices.
 // grad must be a contiguous slice of data matching the logical shape of the tensor.
-func (t *Tensor) AccumulateGrad(grad []float64) {
+func (t *Tensor) AccumulateGrad(grad []float32) {
 	if !t.RequiresGrad {
 		return
 	}
@@ -180,7 +180,20 @@ func (t *Tensor) AccumulateGrad(grad []float64) {
 
 	// Fast path: contiguous tensors use SIMD
 	if t.Contiguous() && t.Offset == 0 {
-		floats.Add(t.Grad, grad)
+		// y := y + 1.0 * x  (Axpy computes y = a*x + y)
+		blas32.Axpy(
+			1.0,
+			blas32.Vector{
+				N:    len(grad),
+				Inc:  1,
+				Data: grad,
+			},
+			blas32.Vector{
+				N:    len(grad),
+				Inc:  1,
+				Data: t.Grad,
+			},
+		)
 		return
 	}
 

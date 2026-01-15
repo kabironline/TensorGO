@@ -43,17 +43,17 @@ func (b *CPUBackend) IsGPU() bool {
 // ============================================================================
 
 // Allocate creates a new buffer of the given size on the CPU.
-func (b *CPUBackend) Allocate(size int) []float64 {
-	return make([]float64, size)
+func (b *CPUBackend) Allocate(size int) []float32 {
+	return make([]float32, size)
 }
 
 // Free releases device memory (no-op for CPU).
-func (b *CPUBackend) Free(data []float64) {
+func (b *CPUBackend) Free(data []float32) {
 	// No action needed for CPU memory - handled by Go GC
 }
 
 // Copy performs a device-to-device copy on CPU.
-func (b *CPUBackend) Copy(dst, src []float64) {
+func (b *CPUBackend) Copy(dst, src []float32) {
 	copy(dst, src)
 }
 
@@ -62,11 +62,11 @@ func (b *CPUBackend) Copy(dst, src []float64) {
 // ============================================================================
 
 // ToDevice transfers data from CPU to this device (no-op for CPU).
-func (b *CPUBackend) ToDevice(data []float64) []float64 {
+func (b *CPUBackend) ToDevice(data []float32) []float32 {
 	return data
 }
 
 // ToCPU transfers data from this device to CPU (no-op for CPU).
-func (b *CPUBackend) ToCPU(data []float64) []float64 {
+func (b *CPUBackend) ToCPU(data []float32) []float32 {
 	return data
 }

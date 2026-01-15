@@ -6,18 +6,18 @@ import (
 
 type Adam struct {
 	Params []*tensor.Tensor
-	LR     float64
-	Beta1  float64
-	Beta2  float64
-	Eps    float64
+	LR     float32
+	Beta1  float32
+	Beta2  float32
+	Eps    float32
 	T      int         // Timestep for bias correction
-	M      [][]float64 // First moment (momentum)
-	V      [][]float64 // Second moment (uncentered variance)
+	M      [][]float32 // First moment (momentum)
+	V      [][]float32 // Second moment (uncentered variance)
 }
 
-func NewAdam(params []*tensor.Tensor, lr float64) *Adam {
-	m := make([][]float64, len(params))
-	v := make([][]float64, len(params))
+func NewAdam(params []*tensor.Tensor, lr float32) *Adam {
+	m := make([][]float32, len(params))
+	v := make([][]float32, len(params))
 	for i, p := range params {
 		m[i] = p.Device.Allocate(len(p.Data))
 		v[i] = p.Device.Allocate(len(p.Data))

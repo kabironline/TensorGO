@@ -39,14 +39,14 @@ func TestCudaMatMul(t *testing.T) {
 	}
 	for i := 0; i < size; i += step {
 		idx := i*size + i
-		assert.Equal(t, 1.0, cHost[idx])
+		assert.Equal(t, float32(1.0), cHost[idx])
 	}
 	// spot-check a few off-diagonal entries
 	if size > 1 {
-		assert.Equal(t, 0.0, cHost[1])
-		assert.Equal(t, 0.0, cHost[size])
+		assert.Equal(t, float32(0.0), cHost[1])
+		assert.Equal(t, float32(0.0), cHost[size])
 		last := size*size - 1
-		assert.Equal(t, 0.0, cHost[last-1])
+		assert.Equal(t, float32(0.0), cHost[last-1])
 	}
 }
 
@@ -60,8 +60,8 @@ func BenchmarkCudaMatMul(b *testing.B) {
 	backend.SetDefaultBackend(cu)
 
 	size := 4096
-	h_a := make([]float64, size*size)
-	h_b := make([]float64, size*size)
+	h_a := make([]float32, size*size)
+	h_b := make([]float32, size*size)
 
 	d_a := cu.ToDevice(h_a)
 	d_b := cu.ToDevice(h_b)
@@ -80,7 +80,7 @@ func BenchmarkCudaMatMul(b *testing.B) {
 	cu.Sync()
 
 	b.ResetTimer()
-	b.SetBytes(int64(size * size * 8 * 3))
+	b.SetBytes(int64(size * size * 4 * 3))
 
 	// Benchmark (sync periodically to avoid unbounded queue growth)
 	for i := 0; i < b.N; i++ {
