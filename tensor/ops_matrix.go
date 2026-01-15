@@ -127,17 +127,27 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 	}
 
 	m, k, n := a.Shape[0], a.Shape[1], b.Shape[1]
-	resultData := a.Device.MatMul(a.Data, b.Data, m, n, k, a.Strides[0], b.Strides[0])
 
-	out := NewTensor(resultData, []int{m, n}, a, b)
+	// creating output tensor
+	out := &Tensor{
+		Data:         a.Device.Allocate(m * n),
+		Shape:        []int{m, n},
+		Strides:      []int{n, 1},
+		Device:       a.Device,
+		RequiresGrad: a.RequiresGrad || b.RequiresGrad,
+	}
+
+	a.Device.MatMul(a.Data, b.Data, out.Data, m, n, k, a.Strides[0], b.Strides[0])
 
 	out.Backward = func() {
 		// gradA = gradOut @ b^T
-		gradA := out.Device.MatMulTransB(out.Grad, b.Data, m, k, n, out.Strides[0], b.Strides[0])
+		gradA := out.Device.Allocate(len(a.Data))
+		out.Device.MatMulTransB(out.Grad, b.Data, gradA, m, k, n, out.Strides[0], b.Strides[0])
 		a.AccumulateGrad(gradA)
 
 		// gradB = a^T @ gradOut
-		gradB := out.Device.MatMulTransA(a.Data, out.Grad, k, n, m, a.Strides[0], out.Strides[0])
+		gradB := out.Device.Allocate(len(b.Data))
+		out.Device.MatMulTransA(a.Data, out.Grad, gradB, k, n, m, a.Strides[0], out.Strides[0])
 		b.AccumulateGrad(gradB)
 	}
 

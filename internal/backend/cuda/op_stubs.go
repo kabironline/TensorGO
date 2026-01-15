@@ -25,10 +25,10 @@ func (b *CUDABackend) Square(a []float64, size int) []float64             { retu
 func (b *CUDABackend) MatMulAdd(a, b_val, c []float64, m, n, k, strideA, strideB int) []float64 {
 	return nil
 }
-func (b *CUDABackend) MatMulTransA(a, b_val []float64, m, n, k, strideA, strideB int) []float64 {
+func (b *CUDABackend) MatMulTransA(a, b_val, out []float64, m, n, k, strideA, strideB int) []float64 {
 	return nil
 }
-func (b *CUDABackend) MatMulTransB(a, b_val []float64, m, n, k, strideA, strideB int) []float64 {
+func (b *CUDABackend) MatMulTransB(a, b_val, out []float64, m, n, k, strideA, strideB int) []float64 {
 	return nil
 }
 

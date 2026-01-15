@@ -23,11 +23,12 @@ func (b *CUDABackend) ToDevice(data []float64) []float64 {
 	// 2. Perform Synchronous Copy (Host to Device)
 	// We use unsafe.SliceData to get the pointer without dereferencing a single element,
 	// which prevents page faults when Go tries to "check" the element.
-	res := C.cudaMemcpy(
+	res := C.cudaMemcpyAsync(
 		unsafe.Pointer(unsafe.SliceData(gpuData)),
 		unsafe.Pointer(unsafe.SliceData(data)),
 		C.size_t(size*8), // 8 bytes per float64
 		C.cudaMemcpyHostToDevice,
+		C.cudaStream_t(b.stream),
 	)
 
 	if res != C.cudaSuccess {
@@ -48,11 +49,12 @@ func (b *CUDABackend) ToCPU(data []float64) []float64 {
 	hostData := make([]float64, size)
 
 	// 2. Perform Synchronous Copy (Device to Host)
-	res := C.cudaMemcpy(
+	res := C.cudaMemcpyAsync(
 		unsafe.Pointer(unsafe.SliceData(hostData)),
 		unsafe.Pointer(unsafe.SliceData(data)),
 		C.size_t(size*8),
 		C.cudaMemcpyDeviceToHost,
+		C.cudaStream_t(b.stream),
 	)
 
 	if res != C.cudaSuccess {
