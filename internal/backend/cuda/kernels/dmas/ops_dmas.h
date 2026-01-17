@@ -8,10 +8,19 @@ extern "C" {
 #endif
 
 // Element-wise addition: out[i] = a[i] + b[i]
-// Uses async copy + cublasSaxpy into `out` on provided stream
 int cuda_add(float *d_a, float *d_b, float *out,
                  int size, cudaStream_t stream, cublasHandle_t handle);
 
+// Element-wise subtraction: out[i] = a[i] - b[i]
+int cuda_sub(float *d_a, float *d_b, float *out,
+                 int size, cudaStream_t stream, cublasHandle_t handle);
+
+int cuda_mul(float *d_a, float *d_b, float *out,int size, 
+                 cudaStream_t stream);
+
+int cuda_div(float *d_a, float *d_b, float *out,
+                 int size, cudaStream_t stream);
+                 
 #ifdef __cplusplus
 }
 #endif

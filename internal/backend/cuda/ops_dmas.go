@@ -13,7 +13,7 @@ import "unsafe"
 func (bk *CUDABackend) Add(d_a, d_b, d_out []float32, n int) {
 	// when tensors are allocated they are directly mapped to GPU memory
 	// No need to copy data to GPU memory
-	if bk == nil || bk.cuBLASHandle == nil {
+	if bk == nil || bk.cuBLASHandle == nil || bk.stream == nil {
 		panic("cuBLAS handle not initialized")
 	}
 
@@ -34,4 +34,78 @@ func (bk *CUDABackend) Add(d_a, d_b, d_out []float32, n int) {
 		panic("cuda_add failed")
 	}
 
+}
+
+func (bk *CUDABackend) Sub(d_a, d_b, d_out []float32, n int) {
+	// when tensors are allocated they are directly mapped to GPU memory
+	// No need to copy data to GPU memory
+	if bk == nil || bk.cuBLASHandle == nil || bk.stream == nil {
+		panic("cuBLAS handle not initialized")
+	}
+
+	if len(d_a) == 0 || len(d_b) == 0 || len(d_a) != len(d_b) {
+		panic("invalid matrix pointers")
+	}
+
+	ret := C.cuda_sub(
+		(*C.float)(unsafe.Pointer(&d_a[0])),
+		(*C.float)(unsafe.Pointer(&d_b[0])),
+		(*C.float)(unsafe.Pointer(&d_out[0])),
+		C.int(n),
+		C.cudaStream_t(bk.stream),
+		C.cublasHandle_t(bk.cuBLASHandle),
+	)
+
+	if ret != 0 {
+		panic("cuda_sub failed")
+	}
+
+}
+
+func (bk *CUDABackend) Mul(d_a, d_b, d_out []float32, n int) {
+	// when tensors are allocated they are directly mapped to GPU memory
+	// No need to copy data to GPU memory
+	if bk == nil || bk.stream == nil {
+		panic("CUDA stream not initialized")
+	}
+
+	if len(d_a) == 0 || len(d_b) == 0 || len(d_a) != len(d_b) {
+		panic("invalid matrix pointers")
+	}
+
+	ret := C.cuda_mul(
+		(*C.float)(unsafe.Pointer(&d_a[0])),
+		(*C.float)(unsafe.Pointer(&d_b[0])),
+		(*C.float)(unsafe.Pointer(&d_out[0])),
+		C.int(n),
+		C.cudaStream_t(bk.stream),
+	)
+
+	if ret != 0 {
+		panic("cuda_mul failed")
+	}
+}
+
+func (bk *CUDABackend) Div(d_a, d_b, d_out []float32, n int) {
+	// when tensors are allocated they are directly mapped to GPU memory
+	// No need to copy data to GPU memory
+	if bk == nil || bk.stream == nil {
+		panic("CUDA stream not initialized")
+	}
+
+	if len(d_a) == 0 || len(d_b) == 0 || len(d_a) != len(d_b) {
+		panic("invalid matrix pointers")
+	}
+
+	ret := C.cuda_div(
+		(*C.float)(unsafe.Pointer(&d_a[0])),
+		(*C.float)(unsafe.Pointer(&d_b[0])),
+		(*C.float)(unsafe.Pointer(&d_out[0])),
+		C.int(n),
+		C.cudaStream_t(bk.stream),
+	)
+
+	if ret != 0 {
+		panic("cuda_div failed")
+	}
 }

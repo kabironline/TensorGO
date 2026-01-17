@@ -24,8 +24,7 @@ func (bk *CPUBackend) Add(a, b, out []float32, size int) {
 }
 
 // Sub performs element-wise subtraction: out = a - b
-func (bk *CPUBackend) Sub(a, b []float32, size int) []float32 {
-	out := bk.Allocate(size)
+func (bk *CPUBackend) Sub(a, b, out []float32, size int) {
 	copy(out, a)
 	blas32.Axpy(
 		-1.0,
@@ -39,35 +38,28 @@ func (bk *CPUBackend) Sub(a, b []float32, size int) []float32 {
 			Inc:  1,
 			Data: out,
 		})
-	return out
 }
 
 // Mul performs element-wise multiplication: out = a * b
-func (bk *CPUBackend) Mul(a, b []float32, size int) []float32 {
-	out := bk.Allocate(size)
+func (bk *CPUBackend) Mul(a, b, out []float32, size int) {
 	copy(out, a)
 	for i := range out {
 		out[i] *= b[i]
 	}
-	return out
 }
 
 // Div performs element-wise division: out = a / b
-func (bk *CPUBackend) Div(a, b []float32, size int) []float32 {
-	out := bk.Allocate(size)
+func (bk *CPUBackend) Div(a, b, out []float32, size int) {
 	for i := range out {
 		out[i] = a[i] / b[i]
 	}
-	return out
 }
 
 // Neg performs element-wise negation: out = -a
-func (bk *CPUBackend) Neg(a []float32, size int) []float32 {
-	out := bk.Allocate(size)
+func (bk *CPUBackend) Neg(a, out []float32, size int) {
 	for i := range out {
 		out[i] = -a[i]
 	}
-	return out
 }
 
 // -------------------- Scalar Operations --------------------

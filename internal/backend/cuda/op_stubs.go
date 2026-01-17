@@ -4,10 +4,7 @@ package cuda
 // Element-wise Operations (Minimal set to satisfy interface)
 // ============================================================================
 
-func (b *CUDABackend) Sub(a, b_val []float32, size int) []float32                { return nil }
-func (b *CUDABackend) Mul(a, b_val []float32, size int) []float32                { return nil }
-func (b *CUDABackend) Div(a, b_val []float32, size int) []float32                { return nil }
-func (b *CUDABackend) Neg(a []float32, size int) []float32                       { return nil }
+func (b *CUDABackend) Neg(a, out []float32, size int)                            {}
 func (b *CUDABackend) AddScalar(a []float32, scalar float32, size int) []float32 { return nil }
 func (b *CUDABackend) SubScalar(a []float32, scalar float32, size int) []float32 { return nil }
 func (b *CUDABackend) MulScalar(a []float32, scalar float32, size int) []float32 { return nil }
