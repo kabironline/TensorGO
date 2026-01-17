@@ -9,8 +9,9 @@ import (
 func (a *Tensor) Add(b *Tensor) *Tensor {
 	// Simple path if shapes match
 	if sameShape(a.Shape, b.Shape) {
-		res := a.Device.Add(a.Data, b.Data, len(a.Data))
-		out := NewTensor(res, a.Shape, a, b)
+		outData := a.Device.Allocate(len(a.Data))
+		a.Device.Add(a.Data, b.Data, outData, len(a.Data))
+		out := NewTensor(outData, a.Shape, a, b)
 		out.Backward = func() {
 			a.AccumulateGrad(out.Grad)
 			b.AccumulateGrad(out.Grad)

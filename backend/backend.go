@@ -103,7 +103,7 @@ type MemoryTransfer interface {
 
 type ElementWiseOps interface {
 	// Basic arithmetic (in-place operations: a op b -> out)
-	Add(a, b []float32, size int) []float32
+	Add(a, b, out []float32, size int)
 	Sub(a, b []float32, size int) []float32
 	Mul(a, b []float32, size int) []float32
 	Div(a, b []float32, size int) []float32

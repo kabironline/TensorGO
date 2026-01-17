@@ -7,8 +7,7 @@ import (
 // DMAS operations for CPU backend.
 
 // Add performs element-wise addition: out = a + b
-func (bk *CPUBackend) Add(a, b []float32, size int) []float32 {
-	out := bk.Allocate(size)
+func (bk *CPUBackend) Add(a, b, out []float32, size int) {
 	copy(out, a)
 	blas32.Axpy(
 		1.0,
@@ -22,7 +21,6 @@ func (bk *CPUBackend) Add(a, b []float32, size int) []float32 {
 			Inc:  1,
 			Data: out,
 		})
-	return out
 }
 
 // Sub performs element-wise subtraction: out = a - b
