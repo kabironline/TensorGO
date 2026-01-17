@@ -1,0 +1,16 @@
+#ifndef MATRIX_OPS_H
+#define MATRIX_OPS_H
+#include <cublas_v2.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int cuda_matmul(float *d_a, float *d_b, float *out,
+                 int m, int n, int k, int sA, int sB, cublasHandle_t handle);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
