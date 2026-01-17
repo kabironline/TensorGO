@@ -1,11 +1,11 @@
 package cuda
 
 /*
-#cgo LDFLAGS: -L/usr/local/cuda/lib64 -L/usr/lib/wsl/lib -lcuda -lcublas -L${SRCDIR}/kernels -lmatmul
-#cgo CFLAGS: -I/usr/local/cuda/include -I${SRCDIR}/kernels/matrix
+#cgo LDFLAGS: -L/usr/local/cuda/lib64 -L/usr/lib/wsl/lib -lcuda -lcublas -L${SRCDIR}/kernels -lcuda
+#cgo CFLAGS: -I/usr/local/cuda/include -I${SRCDIR} -I${SRCDIR}/kernels -I${SRCDIR}/kernels/matrix
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
-#include "matrix_ops.h"
+#include "ops_matrix.h"
 */
 import "C"
 

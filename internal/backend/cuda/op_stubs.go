@@ -4,7 +4,6 @@ package cuda
 // Element-wise Operations (Minimal set to satisfy interface)
 // ============================================================================
 
-func (b *CUDABackend) Add(a, b_val []float32, size int) []float32                { return nil }
 func (b *CUDABackend) Sub(a, b_val []float32, size int) []float32                { return nil }
 func (b *CUDABackend) Mul(a, b_val []float32, size int) []float32                { return nil }
 func (b *CUDABackend) Div(a, b_val []float32, size int) []float32                { return nil }

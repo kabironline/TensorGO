@@ -11,18 +11,18 @@ INCLUDES = -I$(CUDA_PATH)/include
 LIBS = -L$(CUDA_PATH)/lib64 -lcublas -lcudart
 
 # Output
-LIB_NAME = libmatmul.a
-SHARED_LIB = libmatmul.so
+LIB_NAME = libcuda.a
+SHARED_LIB = libcuda.so
 
-# Source files
-SOURCES = matrix/mul.cu
-OBJECTS = matrix/mul.o
+# Source files - auto-discovered recursively
+SRCS := $(shell find . -type f -name '*.cu')
+OBJECTS := $(SRCS:.cu=.o)
 
 # Build static library
 all: $(LIB_NAME)
 
 $(LIB_NAME): $(OBJECTS)
-	ar rcs $(LIB_NAME) $(OBJECTS)
+	@ar rcs $(LIB_NAME) $(OBJECTS)
 	@echo "Static library built: $(LIB_NAME)"
 
 # Build shared library (optional)
@@ -30,8 +30,9 @@ shared: $(OBJECTS)
 	$(NVCC) -shared -o $(SHARED_LIB) $(OBJECTS) $(LIBS)
 	@echo "Shared library built: $(SHARED_LIB)"
 
-# Compile CUDA source
-%.o: %.cu matrix/matrix_ops.h
+# Compile CUDA source (create output directories if needed)
+%.o: %.cu
+	@mkdir -p $(dir $@)
 	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) -c $< -o $@
 
 # Clean build artifacts

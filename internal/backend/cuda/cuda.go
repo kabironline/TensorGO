@@ -1,11 +1,12 @@
 package cuda
 
 /*
-#cgo LDFLAGS: -L/usr/local/cuda/lib64 -L/usr/lib/wsl/lib -lcuda -lcudart -lcublas -lcudnn
-#cgo CFLAGS: -I/usr/local/cuda/include
+#cgo LDFLAGS: -L/usr/local/cuda/lib64 -L/usr/lib/wsl/lib -lcuda -lcudart -lcublas -lcudnn ${SRCDIR}/kernels/libcuda.a
+#cgo CFLAGS: -I/usr/local/cuda/include -I${SRCDIR} -I${SRCDIR}/kernels -I${SRCDIR}/kernels/dmas
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <cudnn.h>
+#include "kernels/dmas/ops_dmas.h"
 */
 import "C"
 

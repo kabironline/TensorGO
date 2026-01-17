@@ -1,5 +1,5 @@
-#ifndef MATRIX_OPS_H
-#define MATRIX_OPS_H
+#ifndef OPS_MATRIX_H
+#define OPS_MATRIX_H
 #include <cublas_v2.h>
 
 #ifdef __cplusplus

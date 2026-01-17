@@ -1,4 +1,4 @@
-#include "matrix_ops.h"
+#include "ops_matrix.h"
 #include <cublas_v2.h>
 
 int cuda_matmul(float *d_a, float *d_b, float *out, int m, int n, int k, int sA, int sB, cublasHandle_t handle) {
