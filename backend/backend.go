@@ -104,10 +104,10 @@ type MemoryTransfer interface {
 type ElementWiseOps interface {
 	// Basic arithmetic (in-place operations: a op b -> out)
 	Add(a, b, out []float32, size int)
-	Sub(a, b []float32, size int) []float32
-	Mul(a, b []float32, size int) []float32
-	Div(a, b []float32, size int) []float32
-	Neg(a []float32, size int) []float32
+	Sub(a, b, out []float32, size int)
+	Mul(a, b, out []float32, size int)
+	Div(a, b, out []float32, size int)
+	Neg(a, out []float32, size int)
 
 	// Scalar operations
 	AddScalar(a []float32, scalar float32, size int) []float32
