@@ -66,9 +66,13 @@ func (bk *CPUBackend) MatMulTransB(a, b, out []float32, m, n, k, sA, sB int) []f
 }
 
 // MatMulAdd performs matrix multiplication and addition: C = A @ B + C
-func (bk *CPUBackend) MatMulAdd(a, b, c []float32, m, n, k, sA, sB int) []float32 {
-	out := bk.Allocate(m * n)
-	copy(out, c) // Initial out = input C
+func (bk *CPUBackend) MatMulAdd(a, b, c, out []float32, m, n, k, sA, sB int) {
+	// Perform C = A @ B + C
+	// Gemm is alpha * A * B + beta * C
+	// Here, alpha = 1.0, beta = 1.0
+
+	copy(out, c) // Initialize out with current values of C
+
 	blas32.Gemm(
 		blas.NoTrans, blas.NoTrans,
 		1.0, // alpha
@@ -92,6 +96,4 @@ func (bk *CPUBackend) MatMulAdd(a, b, c []float32, m, n, k, sA, sB int) []float3
 			Data:   out,
 		}, // C
 	)
-
-	return out
 }

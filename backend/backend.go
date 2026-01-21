@@ -31,6 +31,19 @@ type Backend interface {
 	UtilityOps
 	RandomOps
 	OptimizerOps
+
+	// Tensor Ops
+	TensorOps
+}
+
+// ============================================================================
+// Tensor Operations
+// ============================================================================
+
+type TensorOps interface {
+	// Contiguous creates a new tensor that is a contiguous copy of the original tensor.
+	// If the original tensor is already contiguous, it returns the original tensor.
+	Contiguous(data, outData []float32, shape, strides []int, offset int)
 }
 
 type OptimizerOps interface {
@@ -136,7 +149,7 @@ type MatrixOps interface {
 	MatMul(a, b, out []float32, m, n, k, strideA, strideB int) []float32
 
 	// MatMulAdd performs matrix multiplication and addition: C = A @ B + C
-	MatMulAdd(a, b, c []float32, m, n, k, strideA, strideB int) []float32
+	MatMulAdd(a, b, c, out []float32, m, n, k, strideA, strideB int)
 
 	// MatMulTransA performs matrix multiplication with A transposed: C = A^T @ B
 	MatMulTransA(a, b, out []float32, m, n, k, strideA, strideB int) []float32
@@ -192,10 +205,10 @@ type AxisReductionOps interface {
 
 type ActivationOps interface {
 	// ReLU applies ReLU activation: out = max(0, a)
-	ReLU(a []float32, size int) []float32
+	ReLU(a, out []float32, size int)
 
 	// ReLUBackward computes ReLU gradient
-	ReLUBackward(grad, input []float32, size int) []float32
+	ReLUBackward(grad, input []float32, out []float32, size int)
 
 	// Sigmoid applies sigmoid activation
 	Sigmoid(a []float32, size int) []float32
