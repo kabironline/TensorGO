@@ -65,9 +65,11 @@ func Contiguous(t *Tensor) *Tensor {
 	totalSize := TotalSize(shape)
 	newData := t.Device.Allocate(totalSize)
 
-	for i := 0; i < totalSize; i++ {
-		newData[i] = t.Data[t.PhysicalIndexFromLinearIndex(i)]
-	}
+	// Let the backend perform the contiguous copy (handles device-specific paths)
+	// Provide the data starting at the tensor's offset so the backend's mapping
+	// logic can operate as if the logical origin is index 0.
+	// Backends implement Contiguous(dst) by writing into the provided out buffer.
+	t.Device.Contiguous(t.Data, newData, shape, t.Strides, t.Offset)
 
 	return &Tensor{
 		Data:         newData,
@@ -78,19 +80,6 @@ func Contiguous(t *Tensor) *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 	}
-}
-
-// NormalizeIndexes ensures that all indexes are non-negative by converting negative indexes to their positive equivalents.
-func NormalizeIndexes(indexes []int, shape []int) []int {
-	normalized := make([]int, len(indexes))
-	for i, idx := range indexes {
-		if idx < 0 {
-			normalized[i] = shape[i] + idx
-		} else {
-			normalized[i] = idx
-		}
-	}
-	return normalized
 }
 
 // ComputeStrides calculates the default row-major strides for a given shape.
@@ -104,14 +93,4 @@ func ComputeStrides(shape []int) []int {
 		strides[i] = strides[i+1] * shape[i+1]
 	}
 	return strides
-}
-
-// ValidateIndexes checks if the provided indexes are within the bounds of the tensor's shape.
-// It panics if any index is out of bounds.
-func ValidateIndexes(indexes []int, shape []int) {
-	for i, idx := range indexes {
-		if idx < 0 || idx >= shape[i] {
-			panic("Index out of bounds")
-		}
-	}
 }

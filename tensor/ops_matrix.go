@@ -157,7 +157,62 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 
 // MatMulAddBias performs matrix multiplication of tensor t with b and adds bias c.
 func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
-	return t.MatMul(b).Add(c)
+	if len(t.Shape) != 2 || len(b.Shape) != 2 || len(c.Shape) != 1 {
+		panic("MatMulAddBias requires 2D matrices and 1D bias vector")
+	}
+	if t.Shape[1] != b.Shape[0] || b.Shape[1] != c.Shape[0] {
+		panic("Incompatible shapes for MatMulAddBias")
+	}
+
+	m, k, n := t.Shape[0], t.Shape[1], b.Shape[1]
+
+	// creating output tensor
+	outData := t.Device.Allocate(m * n)
+	// out = t @ b
+	t.Device.MatMul(t.Data, b.Data, outData, m, n, k, t.Strides[0], b.Strides[0])
+	// add bias c to each row
+	for i := 0; i < m; i++ {
+		base := i * n
+		for j := 0; j < n; j++ {
+			outData[base+j] += c.Data[j]
+		}
+	}
+
+	out := &Tensor{
+		Data:         outData,
+		Shape:        []int{m, n},
+		Strides:      []int{n, 1},
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad || b.RequiresGrad || c.RequiresGrad,
+	}
+	out.Parents = []*Tensor{t, b, c}
+
+	out.Backward = func() {
+		// gradT = gradOut @ b^T
+		gradT := out.Device.Allocate(len(t.Data))
+		out.Device.MatMulTransB(out.Grad, b.Data, gradT, m, k, n, out.Strides[0], b.Strides[0])
+		t.AccumulateGrad(gradT)
+
+		// gradB = t^T @ gradOut
+		gradB := out.Device.Allocate(len(b.Data))
+		out.Device.MatMulTransA(t.Data, out.Grad, gradB, k, n, m, t.Strides[0], out.Strides[0])
+		b.AccumulateGrad(gradB)
+
+		// gradC = sum over rows of gradOut (only if c needs grad to avoid work)
+		if c.RequiresGrad {
+			gradC := out.Device.Allocate(len(c.Data))
+			for j := 0; j < n; j++ {
+				var s float32
+				for i := 0; i < m; i++ {
+					s += out.Grad[i*n+j]
+				}
+				gradC[j] = s
+			}
+			c.AccumulateGrad(gradC)
+		}
+	}
+
+	return out
 }
 
 // MatVecMul performs matrix-vector multiplication.

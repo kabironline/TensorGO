@@ -65,6 +65,30 @@ func (b *CUDABackend) ToCPU(data []float32) []float32 {
 	return hostData
 }
 
+// WriteToDevice copies data from a host slice into an existing device buffer `dst`.
+// `dst` must be a device slice previously allocated by Allocate().
+func (b *CUDABackend) WriteToDevice(dst []float32, src []float32) {
+	size := len(src)
+	if size == 0 {
+		return
+	}
+	if len(dst) != size {
+		panic("WriteToDevice: destination length mismatch")
+	}
+
+	res := C.cudaMemcpyAsync(
+		unsafe.Pointer(unsafe.SliceData(dst)),
+		unsafe.Pointer(unsafe.SliceData(src)),
+		C.size_t(size*4),
+		C.cudaMemcpyHostToDevice,
+		C.cudaStream_t(b.stream),
+	)
+
+	if res != C.cudaSuccess {
+		panic(fmt.Sprintf("WriteToDevice failed: %v", res))
+	}
+}
+
 func (b *CUDABackend) Allocate(size int) []float32 {
 	if size == 0 {
 		return nil

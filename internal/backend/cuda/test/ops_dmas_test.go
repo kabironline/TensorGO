@@ -3,57 +3,61 @@ package cuda_test
 import (
 	"testing"
 
+	"github.com/kabironline/nanograd/backend"
 	"github.com/kabironline/nanograd/internal/backend/cuda"
+	"github.com/kabironline/nanograd/tensor"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestCudaDMAS(t *testing.T) {
 	devices, err := cuda.GetCudaDeviceCount()
-	if err != nil || devices < 1 {
-		t.Skipf("CUDA not available: %v", err)
-	}
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, devices, 1)
 
 	cu, err := cuda.NewCUDABackend(0)
-	if err != nil {
-		t.Skipf("CUDA backend init failed: %v", err)
-	}
+	assert.NoError(t, err)
 
-	// Init
+	// Register and set default so helper constructors can find it
+	backend.RegisterBackend("cuda", cu)
+	backend.SetDefaultBackend(cu)
+
 	size := 1024
 	hA := make([]float32, size)
 	hB := make([]float32, size)
 	for i := 0; i < size; i++ {
 		hA[i] = float32(i)
-		hB[i] = float32(1.5)
+		hB[i] = 1.5
 	}
 
-	// Add test
-	dA := cu.ToDevice(hA)
-	dB := cu.ToDevice(hB)
-	dOut := cu.Allocate(size)
+	a := tensor.NewTensor(hA, []int{size})
+	b := tensor.NewTensor(hB, []int{size})
 
-	cu.Add(dA, dB, dOut, size)
+	// Add test
+	c := a.Add(b)
+	assert.NotNil(t, c)
 	cu.Sync()
 
-	res := cu.ToCPU(dOut)
+	res := cu.ToCPU(c.Data)
 	for i := 0; i < size; i++ {
 		assert.Equal(t, hA[i]+hB[i], res[i])
 	}
 
 	// Sub test
-	cu.Sub(dA, dB, dOut, size)
+	c = a.Sub(b)
+	assert.NotNil(t, c)
 	cu.Sync()
 
-	res = cu.ToCPU(dOut)
+	res = cu.ToCPU(c.Data)
 	for i := 0; i < size; i++ {
 		assert.Equal(t, hA[i]-hB[i], res[i])
 	}
 
 	// Mul test
-	cu.Mul(dA, dB, dOut, size)
+	c = a.Mul(b)
+	assert.NotNil(t, c)
 	cu.Sync()
 
-	res = cu.ToCPU(dOut)
+	res = cu.ToCPU(c.Data)
 	for i := 0; i < size; i++ {
 		assert.Equal(t, hA[i]*hB[i], res[i])
 	}

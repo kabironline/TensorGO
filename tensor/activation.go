@@ -6,11 +6,14 @@ import (
 
 func (t *Tensor) ReLU() *Tensor {
 	tContig := Contiguous(t)
-	result := t.Device.ReLU(tContig.Data, len(tContig.Data))
+	tContigSize := len(tContig.Data)
+	result := t.Device.Allocate(tContigSize)
+	t.Device.ReLU(tContig.Data, result, tContigSize)
 
 	out := NewTensor(result, append([]int{}, t.Shape...), t)
 	out.Backward = func() {
-		grad := t.Device.ReLUBackward(out.Grad, tContig.Data, len(out.Grad))
+		grad := t.Device.Allocate(tContigSize)
+		t.Device.ReLUBackward(out.Grad, tContig.Data, grad, tContigSize)
 		t.AccumulateGrad(grad)
 	}
 	return out
