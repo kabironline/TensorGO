@@ -1,6 +1,7 @@
 package cuda_test
 
 import (
+	"math/rand/v2"
 	"testing"
 
 	"github.com/kabironline/nanograd/backend"
@@ -59,13 +60,19 @@ func BenchmarkCudaMatMul(b *testing.B) {
 	backend.RegisterBackend("cuda", cu)
 	backend.SetDefaultBackend(cu)
 
-	size := 4096
-	h_a := make([]float32, size*size)
-	h_b := make([]float32, size*size)
+	m := 4096
+	k := 2048
+	n := 1024
+
+	h_a := make([]float32, m*k)
+	h_b := make([]float32, k*n)
+
+	randomInit(h_a)
+	randomInit(h_b)
 
 	d_a := cu.ToDevice(h_a)
 	d_b := cu.ToDevice(h_b)
-	d_c := cu.Allocate(size * size)
+	d_c := cu.Allocate(m * n * 4)
 
 	// Warmup
 	for i := 0; i < 10; i++ {
@@ -73,14 +80,14 @@ func BenchmarkCudaMatMul(b *testing.B) {
 			d_a,
 			d_b,
 			d_c,
-			size, size, size,
-			size, size,
+			m, n, k,
+			k, n,
 		)
 	}
 	cu.Sync()
 
 	b.ResetTimer()
-	b.SetBytes(int64(size * size * 4 * 3))
+	b.SetBytes(int64(m * n * 4 * 3))
 
 	// Benchmark (sync periodically to avoid unbounded queue growth)
 	for i := 0; i < b.N; i++ {
@@ -88,8 +95,8 @@ func BenchmarkCudaMatMul(b *testing.B) {
 			d_a,
 			d_b,
 			d_c,
-			size, size, size,
-			size, size,
+			m, n, k,
+			k, n,
 		)
 		if i%10 == 0 {
 			cu.Sync()
@@ -101,4 +108,10 @@ func BenchmarkCudaMatMul(b *testing.B) {
 	cu.Free(d_a)
 	cu.Free(d_b)
 	cu.Free(d_c)
+}
+
+func randomInit(buf []float32) {
+	for i := range buf {
+		buf[i] = rand.Float32()
+	}
 }

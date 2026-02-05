@@ -1,6 +1,7 @@
 package test
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/kabironline/nanograd/backend"
@@ -15,9 +16,13 @@ func BenchmarkMatMulCPU(b *testing.B) {
 	m := 4096
 	k := 2048
 	n := 1024
+
 	h_a := make([]float32, m*k)
 	h_b := make([]float32, k*n)
 	h_c := make([]float32, m*n)
+
+	randomInit(h_a)
+	randomInit(h_b)
 
 	// Warmup
 	for range [10]struct{}{} {
@@ -30,6 +35,7 @@ func BenchmarkMatMulCPU(b *testing.B) {
 			k, n,
 		)
 	}
+	
 	b.ResetTimer()
 	b.SetBytes(int64(m * n * 4 * 3))
 
@@ -42,5 +48,11 @@ func BenchmarkMatMulCPU(b *testing.B) {
 			// stride a, b
 			k, n,
 		)
+	}
+}
+
+func randomInit(buf []float32) {
+	for i := range buf {
+		buf[i] = rand.Float32()
 	}
 }
