@@ -52,15 +52,15 @@ __global__ void relu_scalar_kernel(
 }
 
 
-void cuda_relu(
-    const float* input,
-    float* output,
-    int N,
+int cuda_relu(
+    float* d_in,
+    float* out,
+    int size,
     cudaStream_t stream)
 {
     const int vec_size = 4; // Number of floats processed per thread in vectorized kernel
-    int N_vec = N / vec_size; // Number of full vectorized elements
-    int N_remain = N % vec_size; // Remaining elements for scalar kernel
+    int N_vec = size / vec_size; // Number of full vectorized elements
+    int N_remain = size % vec_size; // Remaining elements for scalar kernel
 
     // Launch parameters
     int gridSize_vec = (N_vec + blockSize - 1) / blockSize;
@@ -68,13 +68,15 @@ void cuda_relu(
 
     // Launch vectorized kernel
     if (N_vec > 0) {
-        relu_vec4_kernel<<<gridSize_vec, blockSize, 0, stream>>>(input, output, N_vec);
+        relu_vec4_kernel<<<gridSize_vec, blockSize, 0, stream>>>(d_in, out, N_vec);
     }
 
     // Launch scalar kernel for remaining elements
     if (N_remain > 0) {
-        relu_scalar_kernel<<<gridSize_scalar, blockSize, 0, stream>>>(input, output, N, N_vec * vec_size);
+        relu_scalar_kernel<<<gridSize_scalar, blockSize, 0, stream>>>(d_in, out, size, N_vec * vec_size);
     }
+
+    return 0;
 }
 
 
@@ -131,15 +133,15 @@ __global__ void relu_scalar_backward_kernel(
 }
 
 int cuda_relu_backward(
-    const float* grad_output,
-    const float* input,
-    float* grad_input,
-    int N,
+    float* d_in,
+    float* d_in_grad,
+    float* out,
+    int size,
     cudaStream_t stream)
 {
     const int vec_size = 4; // Number of floats processed per thread in vectorized kernel
-    int N_vec = N / vec_size; // Number of full vectorized elements
-    int N_remain = N % vec_size; // Remaining elements for scalar kernel
+    int N_vec = size / vec_size; // Number of full vectorized elements
+    int N_remain = size % vec_size; // Remaining elements for scalar kernel
 
     // Launch parameters
     int gridSize_vec = (N_vec + blockSize - 1) / blockSize;
@@ -147,12 +149,12 @@ int cuda_relu_backward(
 
     // Launch vectorized backward kernel
     if (N_vec > 0) {
-        relu_vec4_backward_kernel<<<gridSize_vec, blockSize, 0, stream>>>(grad_output, input, grad_input, N_vec);
+        relu_vec4_backward_kernel<<<gridSize_vec, blockSize, 0, stream>>>(d_in_grad, d_in, out, N_vec);
     }
 
     // Launch scalar backward kernel for remaining elements
     if (N_remain > 0) {
-        relu_scalar_backward_kernel<<<gridSize_scalar, blockSize, 0, stream>>>(grad_output, input, grad_input, N, N_vec * vec_size);
+        relu_scalar_backward_kernel<<<gridSize_scalar, blockSize, 0, stream>>>(d_in_grad, d_in, out, size, N_vec * vec_size);
     }
 
     return 0;
