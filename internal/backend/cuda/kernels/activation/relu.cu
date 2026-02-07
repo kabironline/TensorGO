@@ -1,8 +1,7 @@
 #include "ops_activation.h"
 #include <cuda_runtime.h>
 
-
-int blockSize = 256;
+static int blockSize = 256;
 
 // -------------------------------------------------------------------------
 // Kernel 1: Vectorized (The Workhorse)

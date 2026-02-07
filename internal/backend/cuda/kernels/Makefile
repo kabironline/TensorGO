@@ -8,7 +8,7 @@ NVCC_FLAGS = -arch=sm_86 --compiler-options '-fPIC' -O3
 
 CUDA_PATH = /usr/local/cuda
 INCLUDES = -I$(CUDA_PATH)/include
-LIBS = -L$(CUDA_PATH)/lib64 -lcublas -lcudart
+LIBS = -L$(CUDA_PATH)/lib64 -lcublas -lcudart -lm
 
 # Output
 LIB_NAME = libcuda.a
