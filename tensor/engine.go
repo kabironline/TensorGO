@@ -50,9 +50,7 @@ func (t *Tensor) BackProp() {
 
 	// Ensure root tensor has a gradient buffer and initialize it to 1
 	t.ensureGrad()
-	for i := range t.Grad {
-		t.Grad[i] = 1.0
-	}
+	t.Device.Fill(t.Grad, 1.0, len(t.Grad))
 
 	// Traverse the graph in reverse topological order
 	for i := len(order) - 1; i >= 0; i-- {

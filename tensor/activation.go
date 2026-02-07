@@ -1,9 +1,5 @@
 package tensor
 
-import (
-	"github.com/kabironline/nanograd/internal/pools"
-)
-
 func (t *Tensor) ReLU() *Tensor {
 	tContig := Contiguous(t)
 	tContigSize := len(tContig.Data)
@@ -93,31 +89,9 @@ func (t *Tensor) Softmax() *Tensor {
 
 	out := NewTensor(result, append([]int{}, t.Shape...), t)
 	out.Backward = func() {
-		rows := 1
-		cols := len(tContig.Data)
-		if len(t.Shape) == 2 {
-			rows = t.Shape[0]
-			cols = t.Shape[1]
-		}
-
-		gradInput := pools.GetZeroedBuffer(len(out.Grad))
-		for r := 0; r < rows; r++ {
-			offset := r * cols
-			// Compute sum(y_k * grad_k) for this row
-			var dot float32 = 0.0
-			for c := 0; c < cols; c++ {
-				dot += out.Data[offset+c] * out.Grad[offset+c]
-			}
-
-			// Update gradients: y_i * (grad_i - dot)
-			for c := 0; c < cols; c++ {
-				y := out.Data[offset+c]
-				grad := out.Grad[offset+c]
-				gradInput[offset+c] = y * (grad - dot)
-			}
-		}
-		t.AccumulateGrad(gradInput)
-		pools.PutBuffer(gradInput)
+		// Use backend's SoftmaxBackward operation
+		grad := t.Device.SoftmaxBackward(out.Grad, out.Data, t.Shape)
+		t.AccumulateGrad(grad)
 	}
 	return out
 }

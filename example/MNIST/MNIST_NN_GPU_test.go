@@ -3,6 +3,8 @@ package mnist
 import (
 	"testing"
 
+	"github.com/kabironline/nanograd/backend"
+	"github.com/kabironline/nanograd/internal/backend/cuda"
 	"github.com/kabironline/nanograd/nn"
 	"github.com/kabironline/nanograd/nn/activations"
 	"github.com/kabironline/nanograd/optim"
@@ -11,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func loadMNISTData(t *testing.T) (*GoMNIST.Set, *GoMNIST.Set) {
+func loadMNISTDataGPU(t *testing.T) (*GoMNIST.Set, *GoMNIST.Set) {
 	train, test, err := GoMNIST.Load("./data")
 	assert.NoError(t, err)
 	assert.Equal(t, 60000, len(train.Images))
@@ -23,7 +25,8 @@ func loadMNISTData(t *testing.T) (*GoMNIST.Set, *GoMNIST.Set) {
 
 	return train, test
 }
-func prepareImage(img []uint8) []float32 {
+
+func prepareImageGPU(img []uint8) []float32 {
 	// Normalize pixel values to [0,1] and convert to float32
 	prepared := make([]float32, len(img))
 	for i, v := range img {
@@ -32,8 +35,30 @@ func prepareImage(img []uint8) []float32 {
 	return prepared
 }
 
-func TestMNIST(t *testing.T) {
-	trainData, testData := loadMNISTData(t)
+func TestMNISTGPU(t *testing.T) {
+	// Initialize CUDA backend
+	cu, err := cuda.NewCUDABackend(0)
+	if err != nil {
+		t.Skipf("CUDA not available: %v", err)
+	}
+
+	// Register and set CUDA as default BEFORE creating model
+	backend.RegisterBackend("cuda", cu)
+	backend.SetDefaultBackend(cu)
+
+	t.Logf("CUDA backend initialized - all operations will run on GPU")
+
+	// Build model - tensors will be automatically moved to GPU
+	model := nn.NewSequential(
+		nn.NewLinear(28*28, 128),
+		&activations.ReLU{},
+		nn.NewLinear(128, 64),
+		&activations.ReLU{},
+		nn.NewLinear(64, 10),
+		&activations.Softmax{},
+	)
+
+	trainData, testData := loadMNISTDataGPU(t)
 
 	numTrainSamples := len(trainData.Images)
 	trainInputs := make([]float32, numTrainSamples*28*28)
@@ -41,7 +66,7 @@ func TestMNIST(t *testing.T) {
 
 	for i := range numTrainSamples {
 		imgRaw := trainData.Images[i]
-		img := prepareImage(imgRaw)
+		img := prepareImageGPU(imgRaw)
 		for j, v := range img {
 			trainInputs[i*28*28+j] = float32(v)
 		}
@@ -54,16 +79,6 @@ func TestMNIST(t *testing.T) {
 			}
 		}
 	}
-
-	// Build model: 784 -> 128 (ReLU) -> 64 (ReLU) -> 10 (Softmax)
-	model := nn.NewSequential(
-		nn.NewLinear(28*28, 128),
-		&activations.ReLU{},
-		nn.NewLinear(128, 64),
-		&activations.ReLU{},
-		nn.NewLinear(64, 10),
-		&activations.Softmax{},
-	)
 
 	// Use Adam optimizer with learning rate
 	optimizer := optim.NewAdam(model.Parameters(), 0.005)
@@ -104,7 +119,15 @@ func TestMNIST(t *testing.T) {
 			loss.BackProp()
 			optimizer.Step()
 
-			totalLoss += loss.Data[0]
+			// For GPU, copy loss to CPU to read scalar value
+			var lossVal float32
+			if cu.IsGPU() {
+				lossData := cu.ToCPU(loss.Data)
+				lossVal = lossData[0]
+			} else {
+				lossVal = loss.Data[0]
+			}
+			totalLoss += lossVal
 			batchCount++
 		}
 
@@ -119,7 +142,7 @@ func TestMNIST(t *testing.T) {
 	testTargets := make([]uint8, numTestSamples)
 
 	for i, imgRaw := range testData.Images {
-		img := prepareImage(imgRaw)
+		img := prepareImageGPU(imgRaw)
 		for j, v := range img {
 			testInputs[i*28*28+j] = float32(v)
 		}
@@ -142,13 +165,19 @@ func TestMNIST(t *testing.T) {
 
 		predictions := model.Forward(batchTest)
 
+		// Copy predictions to CPU for evaluation
+		predData := predictions.Data
+		if cu.IsGPU() {
+			predData = cu.ToCPU(predictions.Data)
+		}
+
 		// Count correct predictions
 		for i := 0; i < currentBatchSize; i++ {
 			maxIdx := 0
-			maxVal := predictions.Data[i*10]
+			maxVal := predData[i*10]
 			for j := 1; j < 10; j++ {
-				if predictions.Data[i*10+j] > maxVal {
-					maxVal = predictions.Data[i*10+j]
+				if predData[i*10+j] > maxVal {
+					maxVal = predData[i*10+j]
 					maxIdx = j
 				}
 			}

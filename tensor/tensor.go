@@ -4,7 +4,6 @@ import (
 	"math"
 
 	"github.com/kabironline/nanograd/backend"
-	"gonum.org/v1/gonum/blas/blas32"
 )
 
 type Tensor struct {
@@ -38,6 +37,13 @@ func NewTensor(data []float32, shape []int, parents ...*Tensor) *Tensor {
 	}
 	if dev == nil {
 		dev = backend.AutoSelectBackend()
+	}
+
+	// If backend is GPU, move data to device
+	if dev.IsGPU() {
+		if memTransfer, ok := dev.(backend.MemoryTransfer); ok {
+			data = memTransfer.ToDevice(data)
+		}
 	}
 
 	return &Tensor{
@@ -178,34 +184,40 @@ func (t *Tensor) AccumulateGrad(grad []float32) {
 	// Ensure a grad buffer exists for accumulation.
 	t.ensureGrad()
 
-	// Fast path: contiguous tensors use SIMD
+	// Fast path: contiguous tensors use backend Add operation
 	if t.Contiguous() && t.Offset == 0 {
-		// y := y + 1.0 * x  (Axpy computes y = a*x + y)
-		blas32.Axpy(
-			1.0,
-			blas32.Vector{
-				N:    len(grad),
-				Inc:  1,
-				Data: grad,
-			},
-			blas32.Vector{
-				N:    len(grad),
-				Inc:  1,
-				Data: t.Grad,
-			},
-		)
+		// Use backend's Add operation: t.Grad = t.Grad + grad
+		t.Device.Add(t.Grad, grad, t.Grad, len(grad))
 		return
 	}
 
 	// Medium-fast path: aligned gradients
 	if len(grad) == len(t.Grad) && t.Offset == 0 {
-		for i := range grad {
-			t.Grad[i] += grad[i]
-		}
+		t.Device.Add(t.Grad, grad, t.Grad, len(grad))
 		return
 	}
 
-	// Slow path for views
+	// Slow path for views - need to copy to CPU for indexed access
+	// This is inefficient for GPU but views should be rare during backprop
+	if t.Device.IsGPU() {
+		if memTransfer, ok := t.Device.(backend.MemoryTransfer); ok {
+			// Copy gradients to CPU
+			cpuGrad := memTransfer.ToCPU(t.Grad)
+			cpuIncomingGrad := memTransfer.ToCPU(grad)
+			
+			// Accumulate on CPU
+			for i, g := range cpuIncomingGrad {
+				physicalIdx := t.PhysicalIndexFromLinearIndex(i)
+				cpuGrad[physicalIdx] += g
+			}
+			
+			// Copy back to GPU
+			t.Grad = memTransfer.ToDevice(cpuGrad)
+			return
+		}
+	}
+	
+	// CPU fallback for views
 	for i, g := range grad {
 		physicalIdx := t.PhysicalIndexFromLinearIndex(i)
 		t.Grad[physicalIdx] += g
@@ -231,6 +243,8 @@ func (t *Tensor) ensureGrad() {
 	if t.Grad == nil {
 		// Use underlying data length to ensure we can index into physical positions
 		t.Grad = t.Device.Allocate(len(t.Data))
+		// Initialize gradient to zero
+		t.Device.Fill(t.Grad, 0, len(t.Grad))
 	}
 }
 

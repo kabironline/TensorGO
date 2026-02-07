@@ -1,9 +1,6 @@
 package tensor
 
-import (
-	"github.com/kabironline/nanograd/backend"
-	"github.com/kabironline/nanograd/internal/pools"
-)
+import "github.com/kabironline/nanograd/backend"
 
 // Sum returns a new Tensor which is the sum of all elements in the original tensor.
 func (t *Tensor) Sum() *Tensor {
@@ -16,15 +13,22 @@ func (t *Tensor) Sum() *Tensor {
 	// During backpropagation, the gradient from the output (a single value)
 	// needs to be distributed back to all elements of the original tensor.
 	out.Backward = func() {
-		gradOut := out.Grad[0] // Gradient from the output tensor
-
-		// Create a gradient tensor full of gradOut
-		grad := pools.GetBuffer(TotalSize(t.Shape))
-		for i := range grad {
-			grad[i] = gradOut
+		// For GPU: copy gradient to CPU to read the scalar value
+		var gradOut float32
+		if out.Device.IsGPU() {
+			if memTransfer, ok := out.Device.(backend.MemoryTransfer); ok {
+				gradCPU := memTransfer.ToCPU(out.Grad)
+				gradOut = gradCPU[0]
+			}
+		} else {
+			gradOut = out.Grad[0]
 		}
+
+		// Create a gradient tensor full of gradOut using backend Fill operation
+		grad := t.Device.Allocate(TotalSize(t.Shape))
+		t.Device.Fill(grad, gradOut, TotalSize(t.Shape))
+
 		t.AccumulateGrad(grad)
-		pools.PutBuffer(grad)
 	}
 	return out
 }
@@ -39,15 +43,24 @@ func (t *Tensor) Mean() *Tensor {
 	// During backpropagation, the gradient from the output (a single value)
 	// needs to be distributed back to all elements of the original tensor.
 	out.Backward = func() {
-		gradOut := out.Grad[0] // Gradient from the output tensor
+		// For GPU: copy gradient to CPU to read the scalar value
+		var gradOut float32
+		if out.Device.IsGPU() {
+			if memTransfer, ok := out.Device.(backend.MemoryTransfer); ok {
+				gradCPU := memTransfer.ToCPU(out.Grad)
+				gradOut = gradCPU[0]
+			}
+		} else {
+			gradOut = out.Grad[0]
+		}
+
 		gradPerElement := gradOut / float32(TotalSize(t.Shape))
 
-		grad := pools.GetBuffer(TotalSize(t.Shape))
-		for i := range grad {
-			grad[i] = gradPerElement
-		}
+		// Create a gradient tensor using backend Fill operation
+		grad := t.Device.Allocate(TotalSize(t.Shape))
+		t.Device.Fill(grad, gradPerElement, TotalSize(t.Shape))
+
 		t.AccumulateGrad(grad)
-		pools.PutBuffer(grad)
 	}
 	return out
 }

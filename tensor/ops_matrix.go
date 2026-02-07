@@ -170,21 +170,19 @@ func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
 	outData := t.Device.Allocate(m * n)
 	// out = t @ b
 	t.Device.MatMul(t.Data, b.Data, outData, m, n, k, t.Strides[0], b.Strides[0])
-	// add bias c to each row
-	for i := 0; i < m; i++ {
-		base := i * n
-		for j := 0; j < n; j++ {
-			outData[base+j] += c.Data[j]
-		}
-	}
 
-	out := &Tensor{
+	// Create tensor from matmul result
+	matmulOut := &Tensor{
 		Data:         outData,
 		Shape:        []int{m, n},
 		Strides:      []int{n, 1},
 		Device:       t.Device,
-		RequiresGrad: t.RequiresGrad || b.RequiresGrad || c.RequiresGrad,
+		RequiresGrad: false,
 	}
+
+	// Add bias using tensor operation (works for both CPU and GPU)
+	out := matmulOut.Add(c)
+	out.RequiresGrad = t.RequiresGrad || b.RequiresGrad || c.RequiresGrad
 	out.Parents = []*Tensor{t, b, c}
 
 	out.Backward = func() {
@@ -200,14 +198,8 @@ func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
 
 		// gradC = sum over rows of gradOut (only if c needs grad to avoid work)
 		if c.RequiresGrad {
-			gradC := out.Device.Allocate(len(c.Data))
-			for j := 0; j < n; j++ {
-				var s float32
-				for i := 0; i < m; i++ {
-					s += out.Grad[i*n+j]
-				}
-				gradC[j] = s
-			}
+			// Sum across axis 0 (rows) to get gradient for bias
+			gradC := out.Device.SumAxis(out.Grad, out.Shape, 0)
 			c.AccumulateGrad(gradC)
 		}
 	}
