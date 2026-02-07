@@ -29,6 +29,7 @@ func (bk *CUDABackend) Contiguous(d_src, d_dst []float32, shape, strides []int, 
 		(*C.int)(unsafe.Pointer(&strides[0])),
 		C.int(len(shape)),
 		C.int(total),
+		C.int(offset),
 		C.cudaStream_t(bk.stream),
 	)
 

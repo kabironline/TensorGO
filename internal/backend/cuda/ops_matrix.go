@@ -36,3 +36,27 @@ func (bk *CUDABackend) MatMul(d_a, d_b, out []float32, m, n, k, sA, sB int) []fl
 	}
 	return out
 }
+
+func (b *CUDABackend) MatMulTransA(a, b_val, out []float32, m, n, k, strideA, strideB int) []float32 {
+	C.cuda_matmul_trans_a(
+		(*C.float)(unsafe.Pointer(&a[0])),
+		(*C.float)(unsafe.Pointer(&b_val[0])),
+		(*C.float)(unsafe.Pointer(&out[0])),
+		C.int(m), C.int(n), C.int(k),
+		C.int(strideA), C.int(strideB),
+		C.cublasHandle_t(b.cuBLASHandle),
+	)
+	return out
+}
+
+func (b *CUDABackend) MatMulTransB(a, b_val, out []float32, m, n, k, strideA, strideB int) []float32 {
+	C.cuda_matmul_trans_b(
+		(*C.float)(unsafe.Pointer(&a[0])),
+		(*C.float)(unsafe.Pointer(&b_val[0])),
+		(*C.float)(unsafe.Pointer(&out[0])),
+		C.int(m), C.int(n), C.int(k),
+		C.int(strideA), C.int(strideB),
+		C.cublasHandle_t(b.cuBLASHandle),
+	)
+	return out
+}

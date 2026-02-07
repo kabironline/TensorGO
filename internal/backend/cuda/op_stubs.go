@@ -20,7 +20,6 @@ func cpuBackend() *cpu.CPUBackend {
 // Element-wise Operations (Minimal set to satisfy interface)
 // ============================================================================
 
-func (b *CUDABackend) Neg(a, out []float32, size int) { cpu.NewCPUBackend().Neg(a, out, size) }
 func (b *CUDABackend) AddScalar(a []float32, scalar float32, size int) []float32 {
 	hA := b.ToCPU(a)
 	b.Sync()
@@ -65,31 +64,12 @@ func (b *CUDABackend) Pow(a []float32, power float32, size int) []float32 {
 	b.Sync()
 	return dOut
 }
-func (b *CUDABackend) Exp(a []float32, size int) []float32 { return cpuBackend().Exp(a, size) }
-func (b *CUDABackend) Log(a []float32, size int) []float32 { return cpuBackend().Log(a, size) }
-func (b *CUDABackend) Sqrt(a []float32, size int) []float32 {
-	hA := b.ToCPU(a)
-	b.Sync()
-	out := cpuBackend().Allocate(size)
-	for i := 0; i < size; i++ {
-		out[i] = float32(math.Sqrt(float64(hA[i])))
-	}
-	dOut := b.ToDevice(out)
-	b.Sync()
-	return dOut
-}
-func (b *CUDABackend) Square(a []float32, size int) []float32 { return cpuBackend().Square(a, size) }
 
 // Matrix Operations
 // func (b *CUDABackend) MatMul(a, b_val []float32, m, n, k, strideA, strideB int) []float32 { return nil }
+
 func (b *CUDABackend) MatMulAdd(a, b_val, c, out []float32, m, n, k, strideA, strideB int) {
 	cpuBackend().MatMulAdd(a, b_val, c, out, m, n, k, strideA, strideB)
-}
-func (b *CUDABackend) MatMulTransA(a, b_val, out []float32, m, n, k, strideA, strideB int) []float32 {
-	return cpu.NewCPUBackend().MatMulTransA(a, b_val, out, m, n, k, strideA, strideB)
-}
-func (b *CUDABackend) MatMulTransB(a, b_val, out []float32, m, n, k, strideA, strideB int) []float32 {
-	return cpu.NewCPUBackend().MatMulTransB(a, b_val, out, m, n, k, strideA, strideB)
 }
 
 // Reduction Operations
@@ -324,41 +304,11 @@ func (b *CUDABackend) MaxPool2dBackward(grad []float32, indices []int, xShape []
 
 // Random
 func (b *CUDABackend) Normal(data []float32, mean, stdDev float32, size int) {
-	h := b.ToCPU(data)
-	b.Sync()
+	// Generate random numbers on CPU
+	h := make([]float32, size)
 	cpuBackend().Normal(h, mean, stdDev, size)
-	tmp := b.ToDevice(h)
-	b.Copy(data, tmp)
-	b.Free(tmp)
-	b.Sync()
-}
 
-// Optimizer
-func (b *CUDABackend) StepSGD(data, grad []float32, lr float32) {
-	hData := b.ToCPU(data)
-	hGrad := b.ToCPU(grad)
-	b.Sync()
-	cpuBackend().StepSGD(hData, hGrad, lr)
-	tmp := b.ToDevice(hData)
-	b.Copy(data, tmp)
-	b.Free(tmp)
-	b.Sync()
-}
-func (b *CUDABackend) StepAdam(data, grad, m, v []float32, lr, beta1, beta2, eps float32, t int) {
-	hData := b.ToCPU(data)
-	hGrad := b.ToCPU(grad)
-	hm := b.ToCPU(m)
-	hv := b.ToCPU(v)
-	b.Sync()
-	cpuBackend().StepAdam(hData, hGrad, hm, hv, lr, beta1, beta2, eps, t)
-	tmp := b.ToDevice(hData)
-	b.Copy(data, tmp)
-	b.Free(tmp)
-	tmpm := b.ToDevice(hm)
-	b.Copy(m, tmpm)
-	b.Free(tmpm)
-	tmpv := b.ToDevice(hv)
-	b.Copy(v, tmpv)
-	b.Free(tmpv)
+	// Copy to device memory (data is expected to be device memory)
+	b.WriteToDevice(data, h)
 	b.Sync()
 }

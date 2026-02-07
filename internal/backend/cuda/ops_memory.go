@@ -116,10 +116,13 @@ func (b *CUDABackend) Copy(dst, src []float32) {
 	if size == 0 {
 		return
 	}
+	if len(dst) < size {
+		panic("Device-to-device copy failed: destination too small")
+	}
 	res := C.cudaMemcpy(
 		unsafe.Pointer(unsafe.SliceData(dst)),
 		unsafe.Pointer(unsafe.SliceData(src)),
-		C.size_t(size*8),
+		C.size_t(size*4),
 		C.cudaMemcpyDeviceToDevice,
 	)
 	if res != C.cudaSuccess {

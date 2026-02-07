@@ -17,6 +17,12 @@ func (bk *CUDABackend) Add(d_a, d_b, d_out []float32, n int) {
 		panic("cuBLAS handle not initialized")
 	}
 
+	if n <= 0 {
+		return
+	}
+	if len(d_a) < n || len(d_b) < n || len(d_out) < n {
+		panic("invalid matrix pointers")
+	}
 	if len(d_a) == 0 || len(d_b) == 0 || len(d_a) != len(d_b) {
 		panic("invalid matrix pointers")
 	}
@@ -33,7 +39,6 @@ func (bk *CUDABackend) Add(d_a, d_b, d_out []float32, n int) {
 	if ret != 0 {
 		panic("cuda_add failed")
 	}
-
 }
 
 func (bk *CUDABackend) Sub(d_a, d_b, d_out []float32, n int) {
@@ -43,6 +48,12 @@ func (bk *CUDABackend) Sub(d_a, d_b, d_out []float32, n int) {
 		panic("cuBLAS handle not initialized")
 	}
 
+	if n <= 0 {
+		return
+	}
+	if len(d_a) < n || len(d_b) < n || len(d_out) < n {
+		panic("invalid matrix pointers")
+	}
 	if len(d_a) == 0 || len(d_b) == 0 || len(d_a) != len(d_b) {
 		panic("invalid matrix pointers")
 	}
@@ -69,6 +80,12 @@ func (bk *CUDABackend) Mul(d_a, d_b, d_out []float32, n int) {
 		panic("CUDA stream not initialized")
 	}
 
+	if n <= 0 {
+		return
+	}
+	if len(d_a) < n || len(d_b) < n || len(d_out) < n {
+		panic("invalid matrix pointers")
+	}
 	if len(d_a) == 0 || len(d_b) == 0 || len(d_a) != len(d_b) {
 		panic("invalid matrix pointers")
 	}
@@ -93,6 +110,12 @@ func (bk *CUDABackend) Div(d_a, d_b, d_out []float32, n int) {
 		panic("CUDA stream not initialized")
 	}
 
+	if n <= 0 {
+		return
+	}
+	if len(d_a) < n || len(d_b) < n || len(d_out) < n {
+		panic("invalid matrix pointers")
+	}
 	if len(d_a) == 0 || len(d_b) == 0 || len(d_a) != len(d_b) {
 		panic("invalid matrix pointers")
 	}
