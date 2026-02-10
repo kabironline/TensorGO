@@ -148,12 +148,12 @@ int cuda_relu_backward(
 
     // Launch vectorized backward kernel
     if (N_vec > 0) {
-        relu_vec4_backward_kernel<<<gridSize_vec, blockSize, 0, stream>>>(d_in_grad, d_in, out, N_vec);
+        relu_vec4_backward_kernel<<<gridSize_vec, blockSize, 0, stream>>>(d_in, d_in_grad, out, N_vec);
     }
 
     // Launch scalar backward kernel for remaining elements
     if (N_remain > 0) {
-        relu_scalar_backward_kernel<<<gridSize_scalar, blockSize, 0, stream>>>(d_in_grad, d_in, out, size, N_vec * vec_size);
+        relu_scalar_backward_kernel<<<gridSize_scalar, blockSize, 0, stream>>>(d_in, d_in_grad, out, size, N_vec * vec_size);
     }
 
     return 0;
