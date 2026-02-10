@@ -5,7 +5,17 @@ func (t *Tensor) AddScalar(scalar float32) *Tensor {
 	tContig := Contiguous(t)
 	outData := t.Device.AddScalar(tContig.Data, scalar, len(tContig.Data))
 
-	out := NewTensor(outData, append([]int{}, t.Shape...), t)
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	out := &Tensor{
+		Data:         outData,
+		Shape:        append([]int{}, t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Parents:      []*Tensor{t},
+		contiguous:   true,
+	}
+
 	out.Backward = func() {
 		t.AccumulateGrad(out.Grad)
 	}
@@ -17,7 +27,17 @@ func (t *Tensor) SubScalar(scalar float32) *Tensor {
 	tContig := Contiguous(t)
 	outData := t.Device.SubScalar(tContig.Data, scalar, len(tContig.Data))
 
-	out := NewTensor(outData, append([]int{}, t.Shape...), t)
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	out := &Tensor{
+		Data:         outData,
+		Shape:        append([]int{}, t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Parents:      []*Tensor{t},
+		contiguous:   true,
+	}
+
 	out.Backward = func() {
 		t.AccumulateGrad(out.Grad)
 	}
@@ -29,7 +49,17 @@ func (t *Tensor) MulScalar(scalar float32) *Tensor {
 	tContig := Contiguous(t)
 	outData := t.Device.MulScalar(tContig.Data, scalar, len(tContig.Data))
 
-	out := NewTensor(outData, append([]int{}, t.Shape...), t)
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	out := &Tensor{
+		Data:         outData,
+		Shape:        append([]int{}, t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Parents:      []*Tensor{t},
+		contiguous:   true,
+	}
+
 	out.Backward = func() {
 		grad := t.Device.MulScalar(out.Grad, scalar, len(out.Grad))
 		t.AccumulateGrad(grad)
@@ -42,7 +72,17 @@ func (t *Tensor) DivScalar(scalar float32) *Tensor {
 	tContig := Contiguous(t)
 	outData := t.Device.DivScalar(tContig.Data, scalar, len(tContig.Data))
 
-	out := NewTensor(outData, append([]int{}, t.Shape...), t)
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	out := &Tensor{
+		Data:         outData,
+		Shape:        append([]int{}, t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Parents:      []*Tensor{t},
+		contiguous:   true,
+	}
+
 	out.Backward = func() {
 		grad := t.Device.DivScalar(out.Grad, scalar, len(out.Grad))
 		t.AccumulateGrad(grad)

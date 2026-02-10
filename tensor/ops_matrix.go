@@ -11,7 +11,18 @@ func (a *Tensor) Add(b *Tensor) *Tensor {
 	if sameShape(a.Shape, b.Shape) {
 		outData := a.Device.Allocate(len(a.Data))
 		a.Device.Add(a.Data, b.Data, outData, len(a.Data))
-		out := NewTensor(outData, a.Shape, a, b)
+
+		// Create output tensor manually to avoid ToDevice being called on GPU memory
+		out := &Tensor{
+			Data:         outData,
+			Shape:        append([]int{}, a.Shape...),
+			Strides:      append([]int{}, a.Strides...),
+			Device:       a.Device,
+			RequiresGrad: a.RequiresGrad || b.RequiresGrad,
+			Parents:      []*Tensor{a, b},
+			contiguous:   true,
+		}
+
 		out.Backward = func() {
 			a.AccumulateGrad(out.Grad)
 			b.AccumulateGrad(out.Grad)
@@ -77,16 +88,14 @@ func (a *Tensor) Mul(b *Tensor) *Tensor {
 	out.Parents = []*Tensor{a, b}
 
 	out.Backward = func() {
-		gradTensor := out.ToGradTensor()
-
 		// Grad A = out.Grad * B
-		tempA := BroadcastMulOp(gradTensor, b)
-		gradA := ReduceSumTo(a.Device, tempA.Data, tempA.Shape, a.Shape)
+		tempA := a.Device.BroadcastMul(out.Grad, b.Data, out.Shape, b.Shape, out.Shape)
+		gradA := ReduceSumTo(a.Device, tempA, out.Shape, a.Shape)
 		a.AccumulateGrad(gradA)
 
 		// Grad B = out.Grad * A
-		tempB := BroadcastMulOp(gradTensor, a)
-		gradB := ReduceSumTo(b.Device, tempB.Data, tempB.Shape, b.Shape)
+		tempB := b.Device.BroadcastMul(out.Grad, a.Data, out.Shape, a.Shape, out.Shape)
+		gradB := ReduceSumTo(b.Device, tempB, out.Shape, b.Shape)
 		b.AccumulateGrad(gradB)
 	}
 	return out
@@ -178,6 +187,7 @@ func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
 		Strides:      []int{n, 1},
 		Device:       t.Device,
 		RequiresGrad: false,
+		contiguous:   true, // Mark as contiguous to avoid re-copying
 	}
 
 	// Add bias using tensor operation (works for both CPU and GPU)

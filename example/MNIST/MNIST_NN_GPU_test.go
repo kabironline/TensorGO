@@ -44,7 +44,9 @@ func TestMNISTGPU(t *testing.T) {
 
 	// Register and set CUDA as default BEFORE creating model
 	backend.RegisterBackend("cuda", cu)
+	prevBackend := backend.GetDefaultBackend()
 	backend.SetDefaultBackend(cu)
+	defer backend.SetDefaultBackend(prevBackend)
 
 	t.Logf("CUDA backend initialized - all operations will run on GPU")
 
@@ -80,18 +82,31 @@ func TestMNISTGPU(t *testing.T) {
 		}
 	}
 
+	// GPU-optimized batch size: Larger batches amortize kernel launch overhead
+	// and maximize GPU parallelism. CPU uses batch size 32.
+	batchSize := 128
+
 	// Use Adam optimizer with learning rate
 	optimizer := optim.NewAdam(model.Parameters(), 0.005)
 
+	// PyTorch/TensorFlow Pattern: Pre-allocate persistent GPU buffers for batch data
+	// These buffers are reused every iteration, avoiding cudaMalloc() stalls
+	var batchInputBuffer, batchTargetBuffer *tensor.Tensor
+	if cu.IsGPU() {
+		// Allocate max batch size buffers on GPU once
+		batchInputBuffer = tensor.NewEmptyTensor([]int{batchSize, 28 * 28}, cu)
+		batchTargetBuffer = tensor.NewEmptyTensor([]int{batchSize, 10}, cu)
+	}
+
 	// Training loop with CrossEntropy loss
 	const numEpochs = 5
-	const batchSize = 32
+	const samplingInterval = 10 // Sample loss every N batches (PyTorch-style)
 
 	for epoch := range numEpochs {
-		var totalLoss float32 = 0.0
-		batchCount := 0
+		var sampledLossSum float32 = 0.0
+		sampledCount := 0
 
-		// Mini-batch training
+		// Mini-batch training - async style
 		for batch := 0; batch*batchSize < numTrainSamples; batch++ {
 			start := batch * batchSize
 			end := start + batchSize
@@ -101,12 +116,26 @@ func TestMNISTGPU(t *testing.T) {
 
 			currentBatchSize := end - start
 
-			// Create batch slices
+			// Get host batch slices
 			batchInputData := trainInputs[start*28*28 : end*28*28]
 			batchTargetData := trainTargets[start*10 : end*10]
 
-			batchInput := tensor.NewTensor(batchInputData, []int{currentBatchSize, 28 * 28})
-			batchTarget := tensor.NewTensor(batchTargetData, []int{currentBatchSize, 10})
+			var batchInput, batchTarget *tensor.Tensor
+
+			if cu.IsGPU() && currentBatchSize == batchSize {
+				// TRUE PyTorch pattern: Reuse pre-allocated buffer tensors directly
+				// Just copy new data into them - NO new tensor allocation!
+				cu.WriteToDevice(batchInputBuffer.Data, batchInputData)
+				cu.WriteToDevice(batchTargetBuffer.Data, batchTargetData)
+
+				// Use the buffer tensors AS-IS (they were properly created with NewEmptyTensor)
+				batchInput = batchInputBuffer
+				batchTarget = batchTargetBuffer
+			} else {
+				// Fallback for last batch or CPU mode
+				batchInput = tensor.NewTensor(batchInputData, []int{currentBatchSize, 28 * 28})
+				batchTarget = tensor.NewTensor(batchTargetData, []int{currentBatchSize, 10})
+			}
 
 			// Forward pass
 			optimizer.ZeroGrad()
@@ -119,21 +148,47 @@ func TestMNISTGPU(t *testing.T) {
 			loss.BackProp()
 			optimizer.Step()
 
-			// For GPU, copy loss to CPU to read scalar value
-			var lossVal float32
-			if cu.IsGPU() {
-				lossData := cu.ToCPU(loss.Data)
-				lossVal = lossData[0]
-			} else {
-				lossVal = loss.Data[0]
+			// Sample loss reading (PyTorch-style) - don't sync on every batch
+			// Only read loss values occasionally to avoid GPU stalls
+			if batch%samplingInterval == 0 {
+				var lossVal float32
+				if cu.IsGPU() {
+					lossData := cu.ToCPU(loss.Data)
+					lossVal = lossData[0]
+				} else {
+					lossVal = loss.Data[0]
+				}
+				sampledLossSum += lossVal
+				sampledCount++
 			}
-			totalLoss += lossVal
-			batchCount++
+
+			// Clean up intermediate computations (keep model parameters)
+			loss.ClearComputationGraph()
+			pred.ClearGraph()
+
+			// Only clean batch tensors if they were newly allocated (fallback path)
+			// Don't clean the persistent buffer tensors - we're reusing them!
+			if currentBatchSize != batchSize {
+				batchInput.ClearGraph()
+				batchTarget.ClearGraph()
+			}
 		}
 
-		avgLoss := totalLoss / float32(batchCount)
+		// Calculate approximate average loss from sampled batches
+		avgLoss := float32(0)
+		if sampledCount > 0 {
+			avgLoss = sampledLossSum / float32(sampledCount)
+		}
 		t.Logf("Epoch %d, Avg Loss: %f", epoch, avgLoss)
 
+		// Sync GPU at end of epoch to ensure all work is done
+		cu.Sync()
+	}
+
+	// Free persistent batch buffers
+	if cu.IsGPU() {
+		batchInputBuffer.ClearGraph()
+		batchTargetBuffer.ClearGraph()
 	}
 
 	// Evaluate on full test set
@@ -149,7 +204,15 @@ func TestMNISTGPU(t *testing.T) {
 		testTargets[i] = uint8(testData.Labels[i])
 	}
 
-	// Evaluate in batches to avoid memory issues
+	// Preload all test data to GPU (PyTorch-style batching)
+	var deviceTestInputs []float32
+	if cu.IsGPU() {
+		deviceTestInputs = cu.ToDevice(testInputs)
+	} else {
+		deviceTestInputs = testInputs
+	}
+
+	// Process predictions in batches and collect results on GPU
 	correctPredictions := 0
 	testBatchSize := 100
 	for batch := 0; batch < (numTestSamples+testBatchSize-1)/testBatchSize; batch++ {
@@ -160,8 +223,20 @@ func TestMNISTGPU(t *testing.T) {
 		}
 
 		currentBatchSize := end - start
-		batchTestData := testInputs[start*28*28 : end*28*28]
-		batchTest := tensor.NewTensor(batchTestData, []int{currentBatchSize, 28 * 28})
+
+		// Create tensors from preloaded device data (no additional copy)
+		inSlice := deviceTestInputs[start*28*28 : end*28*28]
+		batchTest := &tensor.Tensor{
+			Data:         inSlice,
+			Grad:         nil,
+			Shape:        []int{currentBatchSize, 28 * 28},
+			Strides:      []int{28 * 28, 1},
+			Parents:      nil,
+			Backward:     nil,
+			Offset:       0,
+			Device:       cu,
+			RequiresGrad: false,
+		}
 
 		predictions := model.Forward(batchTest)
 
@@ -185,6 +260,14 @@ func TestMNISTGPU(t *testing.T) {
 				correctPredictions++
 			}
 		}
+
+		// Cleanup prediction tensors (not input, since it's a view of preloaded buffer)
+		predictions.ClearGraph()
+	}
+
+	// Cleanup preloaded test data
+	if cu.IsGPU() {
+		cu.Free(deviceTestInputs)
 	}
 
 	accuracy := float32(correctPredictions) / float32(numTestSamples) * 100.0

@@ -108,7 +108,17 @@ func BroadcastAddOp(a, b *Tensor) *Tensor {
 	bContig := Contiguous(b)
 
 	outData := a.Device.BroadcastAdd(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
-	return NewTensor(outData, outShape, a, b)
+
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	return &Tensor{
+		Data:         outData,
+		Shape:        outShape,
+		Strides:      ComputeStrides(outShape),
+		Device:       a.Device,
+		RequiresGrad: a.RequiresGrad || b.RequiresGrad,
+		Parents:      []*Tensor{a, b},
+		contiguous:   true,
+	}
 }
 
 // BroadcastSubOp performs broadcasted element-wise subtraction.
@@ -119,7 +129,17 @@ func BroadcastSubOp(a, b *Tensor) *Tensor {
 	bContig := Contiguous(b)
 
 	outData := a.Device.BroadcastSub(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
-	return NewTensor(outData, outShape, a, b)
+
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	return &Tensor{
+		Data:         outData,
+		Shape:        outShape,
+		Strides:      ComputeStrides(outShape),
+		Device:       a.Device,
+		RequiresGrad: a.RequiresGrad || b.RequiresGrad,
+		Parents:      []*Tensor{a, b},
+		contiguous:   true,
+	}
 }
 
 // BroadcastMulOp performs broadcasted element-wise multiplication.
@@ -130,7 +150,17 @@ func BroadcastMulOp(a, b *Tensor) *Tensor {
 	bContig := Contiguous(b)
 
 	outData := a.Device.BroadcastMul(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
-	return NewTensor(outData, outShape, a, b)
+
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	return &Tensor{
+		Data:         outData,
+		Shape:        outShape,
+		Strides:      ComputeStrides(outShape),
+		Device:       a.Device,
+		RequiresGrad: a.RequiresGrad || b.RequiresGrad,
+		Parents:      []*Tensor{a, b},
+		contiguous:   true,
+	}
 }
 
 // BroadcastDivOp performs broadcasted element-wise division.
@@ -141,5 +171,15 @@ func BroadcastDivOp(a, b *Tensor) *Tensor {
 	bContig := Contiguous(b)
 
 	outData := a.Device.BroadcastDiv(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
-	return NewTensor(outData, outShape, a, b)
+
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	return &Tensor{
+		Data:         outData,
+		Shape:        outShape,
+		Strides:      ComputeStrides(outShape),
+		Device:       a.Device,
+		RequiresGrad: a.RequiresGrad || b.RequiresGrad,
+		Parents:      []*Tensor{a, b},
+		contiguous:   true,
+	}
 }

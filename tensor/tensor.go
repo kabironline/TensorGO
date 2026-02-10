@@ -204,19 +204,19 @@ func (t *Tensor) AccumulateGrad(grad []float32) {
 			// Copy gradients to CPU
 			cpuGrad := memTransfer.ToCPU(t.Grad)
 			cpuIncomingGrad := memTransfer.ToCPU(grad)
-			
+
 			// Accumulate on CPU
 			for i, g := range cpuIncomingGrad {
 				physicalIdx := t.PhysicalIndexFromLinearIndex(i)
 				cpuGrad[physicalIdx] += g
 			}
-			
+
 			// Copy back to GPU
 			t.Grad = memTransfer.ToDevice(cpuGrad)
 			return
 		}
 	}
-	
+
 	// CPU fallback for views
 	for i, g := range grad {
 		physicalIdx := t.PhysicalIndexFromLinearIndex(i)
@@ -236,6 +236,84 @@ func (t *Tensor) TotalSize() int {
 // Contiguous returns whether the tensor's storage is contiguous in row-major order.
 func (t *Tensor) Contiguous() bool {
 	return t.contiguous
+}
+
+// Free releases GPU memory for this tensor's data and gradients.
+// Only call this when the tensor is no longer needed.
+// WARNING: Do not use the tensor after calling Free()!
+func (t *Tensor) Free() {
+	if t.Data != nil && t.Device.IsGPU() {
+		t.Device.Free(t.Data)
+		t.Data = nil
+	}
+	if t.Grad != nil && t.Device.IsGPU() {
+		t.Device.Free(t.Grad)
+		t.Grad = nil
+	}
+}
+
+// ClearGraph breaks references to parent tensors and backward functions,
+// allowing Go's GC to collect intermediate tensors.
+// Call this after backward pass completes to prevent memory leaks.
+func (t *Tensor) ClearGraph() {
+	t.Parents = nil
+	t.Backward = nil
+	// Free GPU memory for Data and Grad
+	if t.Data != nil && t.Device.IsGPU() {
+		t.Device.Free(t.Data)
+		t.Data = nil
+	}
+	if t.Grad != nil && t.Device.IsGPU() {
+		t.Device.Free(t.Grad)
+		t.Grad = nil
+	}
+}
+
+// ClearComputationGraph clears the entire computation graph starting from this tensor.
+// It walks the graph and clears all non-parameter tensors (tensors that had Parents).
+// Parameters (leaf tensors with RequiresGrad but no original Parents) are preserved.
+// This should be called on the loss tensor after backward completes.
+func (t *Tensor) ClearComputationGraph() {
+	// Use a set to track visited tensors and avoid cycles
+	visited := make(map[*Tensor]bool)
+	t.clearGraphHelper(visited)
+}
+
+func (t *Tensor) clearGraphHelper(visited map[*Tensor]bool) {
+	if t == nil || visited[t] {
+		return
+	}
+	visited[t] = true
+
+	// Save the parents list before clearing
+	parents := t.Parents
+
+	// Don't clear leaf parameters (RequiresGrad but originally had no parents)
+	// We identify these as tensors with RequiresGrad=true
+	// If a tensor has RequiresGrad but is also in this graph, it means it was created
+	// during forward pass (like intermediate activations that require grad).
+	// Parameters are created separately and should have been leaf nodes.
+	//
+	// A better heuristic: if this tensor has no Parents NOW, it's either:
+	// 1. A parameter (leaf node) - DON'T clear its data
+	// 2. Already been cleared - skip
+	//
+	// If it DOES have Parents, it's an intermediate tensor - clear everything
+
+	if len(parents) > 0 {
+		// Intermediate tensor - recursively visit parents first
+		for _, parent := range parents {
+			parent.clearGraphHelper(visited)
+		}
+
+		// Then clear this intermediate tensor completely
+		t.ClearGraph()
+	} else {
+		// Leaf tensor (parameter or already cleared) - only clear backward/parents refs
+		// DON'T free Data or Grad - parameters need both for the next iteration
+		t.Parents = nil
+		t.Backward = nil
+	}
 }
 
 // ensureGrad makes sure t.Grad is allocated. It's safe to call multiple times.

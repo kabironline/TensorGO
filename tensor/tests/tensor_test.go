@@ -124,6 +124,21 @@ func TestBroadcastMul(t *testing.T) {
 	}
 }
 
+func TestAddResultStridesContiguous(t *testing.T) {
+	a := tensor.NewTensor([]float32{1, 2, 3, 4}, []int{2, 2})
+	aT := a.Transpose([]int{1, 0})
+	b := tensor.NewTensor([]float32{10, 20, 30, 40}, []int{2, 2})
+
+	out := aT.Add(b)
+	expected := tensor.ComputeStrides(out.Shape)
+
+	for i, v := range expected {
+		if out.Strides[i] != v {
+			t.Errorf("Stride[%d]: expected %d, got %d", i, v, out.Strides[i])
+		}
+	}
+}
+
 func TestAtSetAt(t *testing.T) {
 	data := make([]float32, 6)
 	tens := tensor.NewTensor(data, []int{2, 3})

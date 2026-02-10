@@ -6,7 +6,17 @@ func (t *Tensor) ReLU() *Tensor {
 	result := t.Device.Allocate(tContigSize)
 	t.Device.ReLU(tContig.Data, result, tContigSize)
 
-	out := NewTensor(result, append([]int{}, t.Shape...), t)
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	out := &Tensor{
+		Data:         result,
+		Shape:        append([]int{}, t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Parents:      []*Tensor{t},
+		contiguous:   true,
+	}
+
 	out.Backward = func() {
 		grad := t.Device.Allocate(tContigSize)
 		t.Device.ReLUBackward(out.Grad, tContig.Data, grad, tContigSize)
@@ -19,7 +29,17 @@ func (t *Tensor) Sigmoid() *Tensor {
 	tContig := Contiguous(t)
 	result := t.Device.Sigmoid(tContig.Data, len(tContig.Data))
 
-	out := NewTensor(result, append([]int{}, t.Shape...), t)
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	out := &Tensor{
+		Data:         result,
+		Shape:        append([]int{}, t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Parents:      []*Tensor{t},
+		contiguous:   true,
+	}
+
 	out.Backward = func() {
 		grad := t.Device.SigmoidBackward(out.Grad, out.Data, len(out.Grad))
 		t.AccumulateGrad(grad)
@@ -31,7 +51,17 @@ func (t *Tensor) Tanh() *Tensor {
 	tContig := Contiguous(t)
 	result := t.Device.Tanh(tContig.Data, len(tContig.Data))
 
-	out := NewTensor(result, append([]int{}, t.Shape...), t)
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	out := &Tensor{
+		Data:         result,
+		Shape:        append([]int{}, t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Parents:      []*Tensor{t},
+		contiguous:   true,
+	}
+
 	out.Backward = func() {
 		grad := t.Device.TanhBackward(out.Grad, out.Data, len(out.Grad))
 		t.AccumulateGrad(grad)
@@ -43,7 +73,17 @@ func (t *Tensor) Exp() *Tensor {
 	tContig := Contiguous(t)
 	result := t.Device.Exp(tContig.Data, len(tContig.Data))
 
-	out := NewTensor(result, append([]int{}, t.Shape...), t)
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	out := &Tensor{
+		Data:         result,
+		Shape:        append([]int{}, t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Parents:      []*Tensor{t},
+		contiguous:   true,
+	}
+
 	out.Backward = func() {
 		// dL/dt = dL/dout * exp(t) = dL/dout * out
 		grad := t.Device.BroadcastMul(out.Grad, out.Data, out.Shape, out.Shape, out.Shape)
@@ -56,7 +96,17 @@ func (t *Tensor) Log() *Tensor {
 	tContig := Contiguous(t)
 	result := t.Device.Log(tContig.Data, len(tContig.Data))
 
-	out := NewTensor(result, append([]int{}, t.Shape...), t)
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	out := &Tensor{
+		Data:         result,
+		Shape:        append([]int{}, t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Parents:      []*Tensor{t},
+		contiguous:   true,
+	}
+
 	out.Backward = func() {
 		// dL/dt = dL/dout * (1/t)
 		grad := t.Device.BroadcastDiv(out.Grad, tContig.Data, out.Shape, t.Shape, out.Shape)
@@ -69,7 +119,17 @@ func (t *Tensor) Square() *Tensor {
 	tContig := Contiguous(t)
 	result := t.Device.Square(tContig.Data, len(tContig.Data))
 
-	out := NewTensor(result, append([]int{}, t.Shape...), t)
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	out := &Tensor{
+		Data:         result,
+		Shape:        append([]int{}, t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Parents:      []*Tensor{t},
+		contiguous:   true,
+	}
+
 	out.Backward = func() {
 		// dL/dt = dL/dout * 2t
 		grad2t := t.Device.MulScalar(tContig.Data, 2.0, len(tContig.Data))
@@ -87,7 +147,17 @@ func (t *Tensor) Softmax() *Tensor {
 	tContig := Contiguous(t)
 	result := t.Device.Softmax(tContig.Data, t.Shape)
 
-	out := NewTensor(result, append([]int{}, t.Shape...), t)
+	// Create output tensor manually to avoid ToDevice being called on GPU memory
+	out := &Tensor{
+		Data:         result,
+		Shape:        append([]int{}, t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		Parents:      []*Tensor{t},
+		contiguous:   true,
+	}
+
 	out.Backward = func() {
 		// Use backend's SoftmaxBackward operation
 		grad := t.Device.SoftmaxBackward(out.Grad, out.Data, t.Shape)

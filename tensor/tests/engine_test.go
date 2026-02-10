@@ -78,6 +78,34 @@ func TestBackPropSimpleMul(t *testing.T) {
 	}
 }
 
+func TestBackPropMulWithTransposedView(t *testing.T) {
+	a := newTestTensor([]float32{1, 2, 3, 4}, []int{2, 2})
+	bBase := newTestTensor([]float32{5, 6, 7, 8}, []int{2, 2})
+	b := bBase.Transpose([]int{1, 0})
+
+	prod := a.Mul(b)
+	loss := prod.Sum()
+	loss.BackProp()
+
+	expectedAGrad := []float32{5, 7, 6, 8}
+	for i, v := range expectedAGrad {
+		if math.Abs(float64(a.Grad[i]-v)) > 1e-9 {
+			t.Errorf("a.Grad[%d]: expected %f, got %f", i, v, a.Grad[i])
+		}
+	}
+
+	if bBase.Grad == nil {
+		t.Fatalf("Expected bBase.Grad to be allocated")
+	}
+
+	expectedBBaseGrad := []float32{1, 3, 2, 4}
+	for i, v := range expectedBBaseGrad {
+		if math.Abs(float64(bBase.Grad[i]-v)) > 1e-9 {
+			t.Errorf("bBase.Grad[%d]: expected %f, got %f", i, v, bBase.Grad[i])
+		}
+	}
+}
+
 func TestBackPropChain(t *testing.T) {
 	// z = (x + y) * w
 	// dz/dx = w
