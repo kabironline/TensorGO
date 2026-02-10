@@ -8,10 +8,18 @@ import (
 	"github.com/kabironline/nanograd/internal/backend/cpu"
 )
 
+func setDefaultBackend(b backend.Backend) func() {
+	prev := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(b)
+	return func() {
+		backend.SetDefaultBackend(prev)
+	}
+}
+
 func BenchmarkMatMulCPU(b *testing.B) {
 	cpu := cpu.NewCPUBackend()
 	backend.RegisterBackend("cpu", cpu)
-	backend.SetDefaultBackend(cpu)
+	defer setDefaultBackend(cpu)()
 
 	m := 4096
 	k := 2048
@@ -35,7 +43,7 @@ func BenchmarkMatMulCPU(b *testing.B) {
 			k, n,
 		)
 	}
-	
+
 	b.ResetTimer()
 	b.SetBytes(int64(m * n * 4 * 3))
 

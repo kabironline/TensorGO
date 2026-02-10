@@ -20,38 +20,8 @@ func cpuBackend() *cpu.CPUBackend {
 // Element-wise Operations (Minimal set to satisfy interface)
 // ============================================================================
 
-func (b *CUDABackend) AddScalar(a []float32, scalar float32, size int) []float32 {
-	hA := b.ToCPU(a)
-	b.Sync()
-	hOut := cpuBackend().AddScalar(hA, scalar, size)
-	dOut := b.ToDevice(hOut)
-	b.Sync()
-	return dOut
-}
-func (b *CUDABackend) SubScalar(a []float32, scalar float32, size int) []float32 {
-	hA := b.ToCPU(a)
-	b.Sync()
-	hOut := cpuBackend().SubScalar(hA, scalar, size)
-	dOut := b.ToDevice(hOut)
-	b.Sync()
-	return dOut
-}
-func (b *CUDABackend) MulScalar(a []float32, scalar float32, size int) []float32 {
-	hA := b.ToCPU(a)
-	b.Sync()
-	hOut := cpuBackend().MulScalar(hA, scalar, size)
-	dOut := b.ToDevice(hOut)
-	b.Sync()
-	return dOut
-}
-func (b *CUDABackend) DivScalar(a []float32, scalar float32, size int) []float32 {
-	hA := b.ToCPU(a)
-	b.Sync()
-	hOut := cpuBackend().DivScalar(hA, scalar, size)
-	dOut := b.ToDevice(hOut)
-	b.Sync()
-	return dOut
-}
+// Scalar operations now have CUDA implementations in ops_scalar.go
+// (AddScalar, SubScalar, MulScalar, DivScalar)
 
 func (b *CUDABackend) Pow(a []float32, power float32, size int) []float32 {
 	hA := b.ToCPU(a)
@@ -69,20 +39,14 @@ func (b *CUDABackend) Pow(a []float32, power float32, size int) []float32 {
 // func (b *CUDABackend) MatMul(a, b_val []float32, m, n, k, strideA, strideB int) []float32 { return nil }
 
 func (b *CUDABackend) MatMulAdd(a, b_val, c, out []float32, m, n, k, strideA, strideB int) {
-	cpuBackend().MatMulAdd(a, b_val, c, out, m, n, k, strideA, strideB)
+	// Compute out = a @ b_val, then add c into out (device-side)
+	b.MatMul(a, b_val, out, m, n, k, strideA, strideB)
+	b.Add(out, c, out, m*n)
 }
 
 // Reduction Operations
-func (b *CUDABackend) Sum(data []float32, size int) float32 {
-	h := b.ToCPU(data)
-	b.Sync()
-	return cpuBackend().Sum(h, size)
-}
-func (b *CUDABackend) Mean(data []float32, size int) float32 {
-	h := b.ToCPU(data)
-	b.Sync()
-	return cpuBackend().Mean(h, size)
-}
+// Sum, Mean, and SumAxis now have CUDA implementations in ops_reduction.go
+
 func (b *CUDABackend) Max(data []float32, size int) float32 {
 	h := b.ToCPU(data)
 	b.Sync()
@@ -95,14 +59,8 @@ func (b *CUDABackend) Min(data []float32, size int) float32 {
 }
 
 // Axis Reductions
-func (b *CUDABackend) SumAxis(data []float32, shape []int, axis int) []float32 {
-	h := b.ToCPU(data)
-	b.Sync()
-	hOut := cpuBackend().SumAxis(h, shape, axis)
-	d := b.ToDevice(hOut)
-	b.Sync()
-	return d
-}
+// SumAxis now has CUDA implementation in ops_reduction.go
+
 func (b *CUDABackend) MeanAxis(data []float32, shape []int, axis int) []float32 {
 	h := b.ToCPU(data)
 	b.Sync()

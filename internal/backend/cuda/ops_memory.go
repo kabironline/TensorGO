@@ -62,6 +62,12 @@ func (b *CUDABackend) ToCPU(data []float32) []float32 {
 		panic(fmt.Sprintf("ToCPU copy failed: %v", res))
 	}
 
+	// Ensure the host buffer is ready before returning.
+	// Use stream sync to avoid blocking unrelated work on other streams.
+	if syncRes := C.cudaStreamSynchronize(C.cudaStream_t(b.stream)); syncRes != C.cudaSuccess {
+		panic(fmt.Sprintf("ToCPU stream sync failed: %v", syncRes))
+	}
+
 	return hostData
 }
 
@@ -131,5 +137,6 @@ func (b *CUDABackend) Copy(dst, src []float32) {
 }
 
 func (b *CUDABackend) Sync() {
-	C.cudaDeviceSynchronize()
+	// Stream sync is sufficient since all backend work is enqueued on b.stream.
+	C.cudaStreamSynchronize(C.cudaStream_t(b.stream))
 }
