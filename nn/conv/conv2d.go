@@ -58,28 +58,70 @@ func (c *Conv2D) Forward(x *tensor.Tensor) *tensor.Tensor {
 	}
 	stride := c.Stride
 
-	// Use backend-accelerated im2col
-	imCol := x.Im2Col(kH, kW, stride, padding)
+	xContig := tensor.Contiguous(x)
+	wContig := tensor.Contiguous(c.Kernel)
 
-	// Kernel is [outC, C, kH, kW] -> Reshape to [outC, C*kH*kW]
-	weightReshaped := c.Kernel.Reshape([]int{outC, -1})
-
-	// MatMul: [outC, C*kH*kW] x [C*kH*kW, N*outH*outW] -> [outC, N*outH*outW]
-	out := weightReshaped.MatMul(imCol)
-
-	// Reshape and transpose to final shape [N, outC, outH, outW]
-	N := x.Shape[0]
-	H, W := x.Shape[2], x.Shape[3]
-	outH := (H+2*padding-kH)/stride + 1
-	outW := (W+2*padding-kW)/stride + 1
-
-	out = out.Reshape([]int{outC, N, outH, outW})
-	out = out.Transpose([]int{1, 0, 2, 3})
-
-	// Add bias if present
+	var bContig *tensor.Tensor
 	if c.Bias != nil {
-		biasReshaped := c.Bias.Reshape([]int{1, outC, 1, 1})
-		out = out.Add(biasReshaped)
+		bContig = tensor.Contiguous(c.Bias)
+	}
+
+	var biasData []float32
+	if bContig != nil {
+		biasData = bContig.Data
+	}
+
+	outData := x.Device.Conv2DForward(
+		xContig.Data,
+		wContig.Data,
+		biasData,
+		x.Shape[0], x.Shape[1], x.Shape[2], x.Shape[3],
+		outC, kH, kW,
+		padding, padding,
+		stride, stride,
+	)
+
+	outH := (x.Shape[2]+2*padding-kH)/stride + 1
+	outW := (x.Shape[3]+2*padding-kW)/stride + 1
+	outShape := []int{x.Shape[0], outC, outH, outW}
+
+	parents := []*tensor.Tensor{x, c.Kernel}
+	if c.Bias != nil {
+		parents = append(parents, c.Bias)
+	}
+
+	out := &tensor.Tensor{
+		Data:         outData,
+		Shape:        outShape,
+		Strides:      tensor.ComputeStrides(outShape),
+		Device:       x.Device,
+		RequiresGrad: x.RequiresGrad || c.Kernel.RequiresGrad || (c.Bias != nil && c.Bias.RequiresGrad),
+		Parents:      parents,
+	}
+
+	out.Backward = func() {
+		if out.Grad == nil {
+			return
+		}
+		inputGrad, weightGrad, biasGrad := x.Device.Conv2DBackward(
+			xContig.Data,
+			wContig.Data,
+			out.Grad,
+			x.Shape[0], x.Shape[1], x.Shape[2], x.Shape[3],
+			outC, kH, kW,
+			padding, padding,
+			stride, stride,
+		)
+
+		if x.RequiresGrad && inputGrad != nil {
+			x.AccumulateGrad(inputGrad)
+		}
+		if c.Kernel.RequiresGrad && weightGrad != nil {
+			c.Kernel.AccumulateGrad(weightGrad)
+		}
+		if c.Bias != nil && c.Bias.RequiresGrad && biasGrad != nil {
+			c.Bias.AccumulateGrad(biasGrad)
+		}
 	}
 
 	return out

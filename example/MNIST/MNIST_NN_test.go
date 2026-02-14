@@ -70,7 +70,7 @@ func TestMNIST(t *testing.T) {
 
 	// Training loop with CrossEntropy loss
 	const numEpochs = 5
-	const batchSize = 32
+	const batchSize = 32 
 
 	for epoch := range numEpochs {
 		var totalLoss float32 = 0.0

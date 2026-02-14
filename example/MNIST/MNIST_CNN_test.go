@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/kabironline/nanograd/backend"
+	"github.com/kabironline/nanograd/internal/backend/cpu"
 	"github.com/kabironline/nanograd/nn"
 	"github.com/kabironline/nanograd/nn/activations"
 	"github.com/kabironline/nanograd/nn/conv"
@@ -23,6 +25,10 @@ func prepareImageForModel(img []uint8) []float32 {
 }
 
 func TestMNISTCNN(t *testing.T) {
+
+	// intialize backend (CPU)
+	backend.SetDefaultBackend(cpu.NewCPUBackend())
+
 	trainData, testData, err := GoMNIST.Load("./data")
 	assert.NoError(t, err)
 	// Use a subset of training data for faster training
@@ -152,5 +158,5 @@ func TestMNISTCNN(t *testing.T) {
 
 	accuracy := float32(correct) / float32(numTestSamples) * 100
 	fmt.Printf("Test Accuracy: %.2f%%\n", accuracy)
-	assert.Greater(t, accuracy, 80.0, "Accuracy should be at least 80%")
+	assert.Greater(t, accuracy, float32(80.0), "Accuracy should be at least 80%")
 }

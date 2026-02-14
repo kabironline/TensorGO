@@ -60,15 +60,23 @@ type RandomOps interface {
 }
 
 type ConvOps interface {
-	// Im2Col transforms an image tensor to a column matrix
-	// data: [N, C, H, W]
-	// returns: [C*kH*kW, N*outH*outW]
-	Im2Col(data []float32, shape, strides []int, kH, kW, stride, padding int) []float32
+	// Conv2DForward computes the forward pass for NCHW tensors.
+	Conv2DForward(
+		input, weights, bias []float32,
+		batchSize, inChannels, inHeight, inWidth int,
+		outChannels, kernelHeight, kernelWidth int,
+		padHeight, padWidth int,
+		strideHeight, strideWidth int,
+	) []float32
 
-	// Col2Im transforms a column matrix back to an image tensor (gradient)
-	// colGrad: [C*kH*kW, N*outH*outW]
-	// returns: [N, C, H, W]
-	Col2Im(colGrad []float32, xShape, xStrides []int, kH, kW, stride, padding int) []float32
+	// Conv2DBackward computes gradients for input, weights, and bias.
+	Conv2DBackward(
+		input, weights, outputGrad []float32,
+		batchSize, inChannels, inHeight, inWidth int,
+		outChannels, kernelHeight, kernelWidth int,
+		padHeight, padWidth int,
+		strideHeight, strideWidth int,
+	) (inputGrad, weightsGrad, biasGrad []float32)
 }
 
 // ============================================================================
@@ -371,18 +379,15 @@ func ListBackends() []string {
 
 // AutoSelectBackend automatically selects the best available backend
 func AutoSelectBackend() Backend {
-	// Try CUDA first
+	// CPU FIRST
+	if b, ok := backends["cpu"]; ok {
+		return b
+	}
 	if b, ok := backends["cuda"]; ok {
 		return b
 	}
 
-	// Try ROCm
 	if b, ok := backends["rocm"]; ok {
-		return b
-	}
-
-	// Fall back to CPU
-	if b, ok := backends["cpu"]; ok {
 		return b
 	}
 
