@@ -224,24 +224,6 @@ func (b *CUDABackend) Transpose(a []float32, rows, cols int) []float32 {
 	return d
 }
 
-// Conv
-func (b *CUDABackend) Im2Col(data []float32, shape, strides []int, kH, kW, stride, padding int) []float32 {
-	h := b.ToCPU(data)
-	b.Sync()
-	hOut := cpuBackend().Im2Col(h, shape, strides, kH, kW, stride, padding)
-	d := b.ToDevice(hOut)
-	b.Sync()
-	return d
-}
-func (b *CUDABackend) Col2Im(colGrad []float32, xShape, xStrides []int, kH, kW, stride, padding int) []float32 {
-	h := b.ToCPU(colGrad)
-	b.Sync()
-	hOut := cpuBackend().Col2Im(h, xShape, xStrides, kH, kW, stride, padding)
-	d := b.ToDevice(hOut)
-	b.Sync()
-	return d
-}
-
 // Pool
 func (b *CUDABackend) MaxPool2d(data []float32, shape, strides []int, kH, kW, stride, padding int) ([]float32, []int) {
 	h := b.ToCPU(data)
