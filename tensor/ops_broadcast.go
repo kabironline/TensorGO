@@ -79,6 +79,9 @@ func (t *Tensor) BroadcastTo(targetShape []int) *Tensor {
 	out.Backward = func() {
 		gradReduced := ReduceSumTo(t.Device, out.Grad, out.Shape, t.Shape)
 		t.AccumulateGrad(gradReduced)
+		if !sameShape(out.Shape, t.Shape) {
+			t.Device.Free(gradReduced)
+		}
 	}
 
 	return out

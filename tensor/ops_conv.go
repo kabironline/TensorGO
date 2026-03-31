@@ -17,6 +17,7 @@ func (t *Tensor) MaxPool2D(kH, kW, stride, padding int) *Tensor {
 	out.Backward = func() {
 		gradT := t.Device.MaxPool2dBackward(out.Grad, indices, t.Shape)
 		t.AccumulateGrad(gradT)
+		t.Device.Free(gradT)
 	}
 
 	return out

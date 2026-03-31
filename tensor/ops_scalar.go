@@ -63,6 +63,7 @@ func (t *Tensor) MulScalar(scalar float32) *Tensor {
 	out.Backward = func() {
 		grad := t.Device.MulScalar(out.Grad, scalar, len(out.Grad))
 		t.AccumulateGrad(grad)
+		t.Device.Free(grad)
 	}
 	return out
 }
@@ -86,6 +87,7 @@ func (t *Tensor) DivScalar(scalar float32) *Tensor {
 	out.Backward = func() {
 		grad := t.Device.DivScalar(out.Grad, scalar, len(out.Grad))
 		t.AccumulateGrad(grad)
+		t.Device.Free(grad)
 	}
 	return out
 }

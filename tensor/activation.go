@@ -21,6 +21,7 @@ func (t *Tensor) ReLU() *Tensor {
 		grad := t.Device.Allocate(tContigSize)
 		t.Device.ReLUBackward(out.Grad, tContig.Data, grad, tContigSize)
 		t.AccumulateGrad(grad)
+		t.Device.Free(grad)
 	}
 	return out
 }
@@ -43,6 +44,7 @@ func (t *Tensor) Sigmoid() *Tensor {
 	out.Backward = func() {
 		grad := t.Device.SigmoidBackward(out.Grad, out.Data, len(out.Grad))
 		t.AccumulateGrad(grad)
+		t.Device.Free(grad)
 	}
 	return out
 }
@@ -65,6 +67,7 @@ func (t *Tensor) Tanh() *Tensor {
 	out.Backward = func() {
 		grad := t.Device.TanhBackward(out.Grad, out.Data, len(out.Grad))
 		t.AccumulateGrad(grad)
+		t.Device.Free(grad)
 	}
 	return out
 }
@@ -88,6 +91,7 @@ func (t *Tensor) Exp() *Tensor {
 		// dL/dt = dL/dout * exp(t) = dL/dout * out
 		grad := t.Device.BroadcastMul(out.Grad, out.Data, out.Shape, out.Shape, out.Shape)
 		t.AccumulateGrad(grad)
+		t.Device.Free(grad)
 	}
 	return out
 }
@@ -111,6 +115,7 @@ func (t *Tensor) Log() *Tensor {
 		// dL/dt = dL/dout * (1/t)
 		grad := t.Device.BroadcastDiv(out.Grad, tContig.Data, out.Shape, t.Shape, out.Shape)
 		t.AccumulateGrad(grad)
+		t.Device.Free(grad)
 	}
 	return out
 }
@@ -135,6 +140,8 @@ func (t *Tensor) Square() *Tensor {
 		grad2t := t.Device.MulScalar(tContig.Data, 2.0, len(tContig.Data))
 		grad := t.Device.BroadcastMul(out.Grad, grad2t, out.Shape, t.Shape, out.Shape)
 		t.AccumulateGrad(grad)
+		t.Device.Free(grad)
+		t.Device.Free(grad2t)
 	}
 	return out
 }
@@ -162,6 +169,7 @@ func (t *Tensor) Softmax() *Tensor {
 		// Use backend's SoftmaxBackward operation
 		grad := t.Device.SoftmaxBackward(out.Grad, out.Data, t.Shape)
 		t.AccumulateGrad(grad)
+		t.Device.Free(grad)
 	}
 	return out
 }

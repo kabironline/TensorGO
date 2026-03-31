@@ -38,13 +38,17 @@ func (a *Tensor) Add(b *Tensor) *Tensor {
 		if sameShape(out.Shape, a.Shape) {
 			a.AccumulateGrad(out.Grad)
 		} else {
-			a.AccumulateGrad(ReduceSumTo(a.Device, out.Grad, out.Shape, a.Shape))
+			gradA := ReduceSumTo(a.Device, out.Grad, out.Shape, a.Shape)
+			a.AccumulateGrad(gradA)
+			a.Device.Free(gradA)
 		}
 
 		if sameShape(out.Shape, b.Shape) {
 			b.AccumulateGrad(out.Grad)
 		} else {
-			b.AccumulateGrad(ReduceSumTo(b.Device, out.Grad, out.Shape, b.Shape))
+			gradB := ReduceSumTo(b.Device, out.Grad, out.Shape, b.Shape)
+			b.AccumulateGrad(gradB)
+			b.Device.Free(gradB)
 		}
 	}
 	return out
@@ -70,13 +74,25 @@ func (a *Tensor) Sub(b *Tensor) *Tensor {
 	out.Parents = []*Tensor{a, b}
 
 	out.Backward = func() {
-		gradA := ReduceSumTo(a.Device, out.Grad, out.Shape, a.Shape)
-		a.AccumulateGrad(gradA)
+		if sameShape(out.Shape, a.Shape) {
+			a.AccumulateGrad(out.Grad)
+		} else {
+			gradA := ReduceSumTo(a.Device, out.Grad, out.Shape, a.Shape)
+			a.AccumulateGrad(gradA)
+			a.Device.Free(gradA)
+		}
 
 		// gradB = -1 * out.Grad
 		negGrad := a.Device.MulScalar(out.Grad, -1.0, len(out.Grad))
-		gradB := ReduceSumTo(b.Device, negGrad, out.Shape, b.Shape)
-		b.AccumulateGrad(gradB)
+		if sameShape(out.Shape, b.Shape) {
+			b.AccumulateGrad(negGrad)
+			b.Device.Free(negGrad)
+		} else {
+			gradB := ReduceSumTo(b.Device, negGrad, out.Shape, b.Shape)
+			b.AccumulateGrad(gradB)
+			b.Device.Free(negGrad)
+			b.Device.Free(gradB)
+		}
 	}
 	return out
 }
@@ -90,13 +106,25 @@ func (a *Tensor) Mul(b *Tensor) *Tensor {
 	out.Backward = func() {
 		// Grad A = out.Grad * B
 		tempA := a.Device.BroadcastMul(out.Grad, b.Data, out.Shape, b.Shape, out.Shape)
-		gradA := ReduceSumTo(a.Device, tempA, out.Shape, a.Shape)
-		a.AccumulateGrad(gradA)
+		if sameShape(out.Shape, a.Shape) {
+			a.AccumulateGrad(tempA)
+		} else {
+			gradA := ReduceSumTo(a.Device, tempA, out.Shape, a.Shape)
+			a.AccumulateGrad(gradA)
+			a.Device.Free(gradA)
+		}
+		a.Device.Free(tempA)
 
 		// Grad B = out.Grad * A
 		tempB := b.Device.BroadcastMul(out.Grad, a.Data, out.Shape, a.Shape, out.Shape)
-		gradB := ReduceSumTo(b.Device, tempB, out.Shape, b.Shape)
-		b.AccumulateGrad(gradB)
+		if sameShape(out.Shape, b.Shape) {
+			b.AccumulateGrad(tempB)
+		} else {
+			gradB := ReduceSumTo(b.Device, tempB, out.Shape, b.Shape)
+			b.AccumulateGrad(gradB)
+			b.Device.Free(gradB)
+		}
+		b.Device.Free(tempB)
 	}
 	return out
 }
@@ -145,6 +173,8 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 		Strides:      []int{n, 1},
 		Device:       a.Device,
 		RequiresGrad: a.RequiresGrad || b.RequiresGrad,
+		Parents:      []*Tensor{a, b},
+		contiguous:   true,
 	}
 
 	a.Device.MatMul(a.Data, b.Data, out.Data, m, n, k, a.Strides[0], b.Strides[0])
@@ -154,11 +184,13 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 		gradA := out.Device.Allocate(len(a.Data))
 		out.Device.MatMulTransB(out.Grad, b.Data, gradA, m, k, n, out.Strides[0], b.Strides[0])
 		a.AccumulateGrad(gradA)
+		out.Device.Free(gradA)
 
 		// gradB = a^T @ gradOut
 		gradB := out.Device.Allocate(len(b.Data))
 		out.Device.MatMulTransA(a.Data, out.Grad, gradB, k, n, m, a.Strides[0], out.Strides[0])
 		b.AccumulateGrad(gradB)
+		out.Device.Free(gradB)
 	}
 
 	return out
@@ -186,35 +218,27 @@ func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
 		Shape:        []int{m, n},
 		Strides:      []int{n, 1},
 		Device:       t.Device,
-		RequiresGrad: false,
-		contiguous:   true, // Mark as contiguous to avoid re-copying
+		RequiresGrad: t.RequiresGrad || b.RequiresGrad,
+		Parents:      []*Tensor{t, b},
+		contiguous:   true,
+	}
+
+	matmulOut.Backward = func() {
+		// gradT = gradMatMul @ b^T
+		gradT := matmulOut.Device.Allocate(len(t.Data))
+		matmulOut.Device.MatMulTransB(matmulOut.Grad, b.Data, gradT, m, k, n, matmulOut.Strides[0], b.Strides[0])
+		t.AccumulateGrad(gradT)
+		matmulOut.Device.Free(gradT)
+
+		// gradB = t^T @ gradMatMul
+		gradB := matmulOut.Device.Allocate(len(b.Data))
+		matmulOut.Device.MatMulTransA(t.Data, matmulOut.Grad, gradB, k, n, m, t.Strides[0], matmulOut.Strides[0])
+		b.AccumulateGrad(gradB)
+		matmulOut.Device.Free(gradB)
 	}
 
 	// Add bias using tensor operation (works for both CPU and GPU)
-	out := matmulOut.Add(c)
-	out.RequiresGrad = t.RequiresGrad || b.RequiresGrad || c.RequiresGrad
-	out.Parents = []*Tensor{t, b, c}
-
-	out.Backward = func() {
-		// gradT = gradOut @ b^T
-		gradT := out.Device.Allocate(len(t.Data))
-		out.Device.MatMulTransB(out.Grad, b.Data, gradT, m, k, n, out.Strides[0], b.Strides[0])
-		t.AccumulateGrad(gradT)
-
-		// gradB = t^T @ gradOut
-		gradB := out.Device.Allocate(len(b.Data))
-		out.Device.MatMulTransA(t.Data, out.Grad, gradB, k, n, m, t.Strides[0], out.Strides[0])
-		b.AccumulateGrad(gradB)
-
-		// gradC = sum over rows of gradOut (only if c needs grad to avoid work)
-		if c.RequiresGrad {
-			// Sum across axis 0 (rows) to get gradient for bias
-			gradC := out.Device.SumAxis(out.Grad, out.Shape, 0)
-			c.AccumulateGrad(gradC)
-		}
-	}
-
-	return out
+	return matmulOut.Add(c)
 }
 
 // MatVecMul performs matrix-vector multiplication.

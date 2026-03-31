@@ -29,6 +29,7 @@ func (t *Tensor) Sum() *Tensor {
 		t.Device.Fill(grad, gradOut, TotalSize(t.Shape))
 
 		t.AccumulateGrad(grad)
+		t.Device.Free(grad)
 	}
 	return out
 }
@@ -61,6 +62,7 @@ func (t *Tensor) Mean() *Tensor {
 		t.Device.Fill(grad, gradPerElement, TotalSize(t.Shape))
 
 		t.AccumulateGrad(grad)
+		t.Device.Free(grad)
 	}
 	return out
 }
