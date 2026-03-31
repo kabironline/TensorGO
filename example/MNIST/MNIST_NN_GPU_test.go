@@ -99,7 +99,7 @@ func TestMNISTGPU(t *testing.T) {
 	}
 
 	// Training loop with CrossEntropy loss
-	const numEpochs = 5
+	const numEpochs = 15
 	const samplingInterval = 10 // Sample loss every N batches (PyTorch-style)
 
 	for epoch := range numEpochs {

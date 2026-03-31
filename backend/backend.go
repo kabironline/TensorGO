@@ -379,7 +379,11 @@ func ListBackends() []string {
 
 // AutoSelectBackend automatically selects the best available backend
 func AutoSelectBackend() Backend {
-	// CPU FIRST
+	if defaultBackend != nil {
+		return defaultBackend
+	}
+
+	// Fall back to registered backends in priority order.
 	if b, ok := backends["cpu"]; ok {
 		return b
 	}

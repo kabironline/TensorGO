@@ -138,10 +138,14 @@ func GetCudaDeviceProps(deviceID int) (map[string]interface{}, error) {
 	info["MaxThreadsDim"] = []int{int(props.maxThreadsDim[0]), int(props.maxThreadsDim[1]), int(props.maxThreadsDim[2])}
 	info["MaxGridSize"] = []int{int(props.maxGridSize[0]), int(props.maxGridSize[1]), int(props.maxGridSize[2])}
 
+	// NEW (Compatible with CUDA 12 and 13)
+	var clockRateKHz C.int
+	C.cudaDeviceGetAttribute(&clockRateKHz, C.cudaDevAttrClockRate, C.int(deviceID))
+
 	info["TotalConstMem"] = uint64(props.totalConstMem)
 	info["Major"] = int(props.major)
 	info["Minor"] = int(props.minor)
-	info["ClockRate"] = int(props.clockRate)
+	info["ClockRate"] = int(clockRateKHz)
 	info["MultiProcessorCount"] = int(props.multiProcessorCount)
 
 	return info, nil
