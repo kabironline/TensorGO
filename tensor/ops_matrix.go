@@ -16,7 +16,7 @@ func (a *Tensor) Add(b *Tensor) *Tensor {
 		out := &Tensor{
 			Data:         outData,
 			Shape:        append([]int{}, a.Shape...),
-			Strides:      append([]int{}, a.Strides...),
+			Strides:      ComputeStrides(a.Shape),
 			Device:       a.Device,
 			RequiresGrad: a.RequiresGrad || b.RequiresGrad,
 			Parents:      []*Tensor{a, b},
@@ -105,7 +105,8 @@ func (a *Tensor) Mul(b *Tensor) *Tensor {
 
 	out.Backward = func() {
 		// Grad A = out.Grad * B
-		tempA := a.Device.BroadcastMul(out.Grad, b.Data, out.Shape, b.Shape, out.Shape)
+		bContig := Contiguous(b)
+		tempA := a.Device.BroadcastMul(out.Grad, bContig.Data, out.Shape, bContig.Shape, out.Shape)
 		if sameShape(out.Shape, a.Shape) {
 			a.AccumulateGrad(tempA)
 		} else {
@@ -116,7 +117,8 @@ func (a *Tensor) Mul(b *Tensor) *Tensor {
 		a.Device.Free(tempA)
 
 		// Grad B = out.Grad * A
-		tempB := b.Device.BroadcastMul(out.Grad, a.Data, out.Shape, a.Shape, out.Shape)
+		aContig := Contiguous(a)
+		tempB := b.Device.BroadcastMul(out.Grad, aContig.Data, out.Shape, aContig.Shape, out.Shape)
 		if sameShape(out.Shape, b.Shape) {
 			b.AccumulateGrad(tempB)
 		} else {
@@ -125,6 +127,12 @@ func (a *Tensor) Mul(b *Tensor) *Tensor {
 			b.Device.Free(gradB)
 		}
 		b.Device.Free(tempB)
+		if bContig != b {
+			b.Device.Free(bContig.Data)
+		}
+		if aContig != a {
+			a.Device.Free(aContig.Data)
+		}
 	}
 	return out
 }

@@ -85,13 +85,11 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 				idx /= out.Shape[k]
 			}
 
-			outIdx := out.Offset
 			tIdx := t.Offset
 			for k := 0; k < len(coords); k++ {
-				outIdx += coords[k] * out.Strides[k]
 				tIdx += coords[inv[k]] * t.Strides[k]
 			}
-			t.Grad[tIdx] += out.Grad[outIdx]
+			t.Grad[tIdx] += out.Grad[i]
 		}
 	}
 
