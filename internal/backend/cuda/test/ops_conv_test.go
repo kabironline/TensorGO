@@ -19,7 +19,6 @@ func TestCudaConv2DForwardMatchesCPU(t *testing.T) {
 	cu, err := cuda.NewCUDABackend(0)
 	require.NoError(t, err)
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	cb := cpu.NewCPUBackend()
 
@@ -77,7 +76,6 @@ func TestCudaConv2DBackwardMatchesCPU(t *testing.T) {
 	cu, err := cuda.NewCUDABackend(0)
 	require.NoError(t, err)
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	cb := cpu.NewCPUBackend()
 
@@ -143,7 +141,6 @@ func BenchmarkCudaConv2DForward(b *testing.B) {
 	}
 
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	batchSize, inChannels, inHeight, inWidth := 32, 16, 32, 32
 	outChannels, kernelHeight, kernelWidth := 32, 3, 3
@@ -208,7 +205,6 @@ func BenchmarkCudaConv2DBackward(b *testing.B) {
 	}
 
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	batchSize, inChannels, inHeight, inWidth := 32, 16, 32, 32
 	outChannels, kernelHeight, kernelWidth := 32, 3, 3

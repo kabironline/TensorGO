@@ -9,14 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func setDefaultBackend(b backend.Backend) func() {
-	prev := backend.GetDefaultBackend()
-	backend.SetDefaultBackend(b)
-	return func() {
-		backend.SetDefaultBackend(prev)
-	}
-}
-
 func TestCudaDMAS(t *testing.T) {
 	devices, err := cuda.GetCudaDeviceCount()
 	assert.NoError(t, err)
@@ -27,7 +19,6 @@ func TestCudaDMAS(t *testing.T) {
 
 	// Register and set default so helper constructors can find it
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	size := 1024
 	hA := make([]float32, size)
@@ -118,7 +109,6 @@ func TestCudaAddVectorized(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	// Test various sizes to verify both float4 vectorized path and scalar remainder
 	testCases := []int{
@@ -168,7 +158,6 @@ func TestCudaSubVectorized(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	// Test various sizes including non-multiples of 4
 	testCases := []int{1, 3, 4, 7, 16, 100, 1024, 1025}

@@ -58,7 +58,6 @@ func BenchmarkCudaMatMul(b *testing.B) {
 	}
 
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	m := 4096
 	k := 2048
@@ -121,7 +120,6 @@ func TestCudaMatMulTransA(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	// Test case: C[2×2] = A^T @ B where A is [3×2], B is [3×2]
 	// A = [[1,2], [3,4], [5,6]]
@@ -161,7 +159,6 @@ func TestCudaMatMulTransB(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	// Test case: C[2×2] = A @ B^T where A is [2×3], B is [2×3]
 	// A = [[1,2,3], [4,5,6]]
@@ -205,7 +202,6 @@ func TestCudaMatMulTransA_NonSquare(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	// Test with non-square result: C[3×4] = A^T @ B where A is [5×3], B is [5×4]
 	// This test case specifically validates the leading dimension fix (lda=n not lda=m)
@@ -262,7 +258,6 @@ func TestCudaMatMulTransB_LargerMatrix(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
-	defer setDefaultBackend(cu)()
 
 	// Larger test: ensure it works with typical neural network dimensions
 	m, k, n := 32, 128, 64 // batch_size=32, features=128, hidden=64
