@@ -66,18 +66,18 @@ func (t *Tensor) BroadcastTo(targetShape []int) *Tensor {
 	}
 
 	out := &Tensor{
-		Data:         t.Data,
+		data:         t.data, // view: shares the parent's storage
 		Shape:        append([]int(nil), targetShape...),
 		Strides:      newStrides,
 		Offset:       t.Offset,
-		Grad:         nil,
+		grad:         nil,
 		Parents:      []*Tensor{t},
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 	}
 
 	out.Backward = func() {
-		gradReduced := ReduceSumTo(t.Device, out.Grad, out.Shape, t.Shape)
+		gradReduced := ReduceSumTo(t.Device, out.Grad(), out.Shape, t.Shape)
 		t.AccumulateGrad(gradReduced)
 		if !sameShape(out.Shape, t.Shape) {
 			t.Device.Free(gradReduced)
@@ -110,11 +110,11 @@ func BroadcastAddOp(a, b *Tensor) *Tensor {
 	aContig := Contiguous(a)
 	bContig := Contiguous(b)
 
-	outData := a.Device.BroadcastAdd(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
+	outData := a.Device.BroadcastAdd(aContig.Data(), bContig.Data(), aContig.Shape, bContig.Shape, outShape)
 
 	// Create output tensor manually to avoid ToDevice being called on GPU memory
 	return &Tensor{
-		Data:         outData,
+		data:         StorageFrom(outData),
 		Shape:        outShape,
 		Strides:      ComputeStrides(outShape),
 		Device:       a.Device,
@@ -131,11 +131,11 @@ func BroadcastSubOp(a, b *Tensor) *Tensor {
 	aContig := Contiguous(a)
 	bContig := Contiguous(b)
 
-	outData := a.Device.BroadcastSub(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
+	outData := a.Device.BroadcastSub(aContig.Data(), bContig.Data(), aContig.Shape, bContig.Shape, outShape)
 
 	// Create output tensor manually to avoid ToDevice being called on GPU memory
 	return &Tensor{
-		Data:         outData,
+		data:         StorageFrom(outData),
 		Shape:        outShape,
 		Strides:      ComputeStrides(outShape),
 		Device:       a.Device,
@@ -152,11 +152,11 @@ func BroadcastMulOp(a, b *Tensor) *Tensor {
 	aContig := Contiguous(a)
 	bContig := Contiguous(b)
 
-	outData := a.Device.BroadcastMul(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
+	outData := a.Device.BroadcastMul(aContig.Data(), bContig.Data(), aContig.Shape, bContig.Shape, outShape)
 
 	// Create output tensor manually to avoid ToDevice being called on GPU memory
 	return &Tensor{
-		Data:         outData,
+		data:         StorageFrom(outData),
 		Shape:        outShape,
 		Strides:      ComputeStrides(outShape),
 		Device:       a.Device,
@@ -173,11 +173,11 @@ func BroadcastDivOp(a, b *Tensor) *Tensor {
 	aContig := Contiguous(a)
 	bContig := Contiguous(b)
 
-	outData := a.Device.BroadcastDiv(aContig.Data, bContig.Data, aContig.Shape, bContig.Shape, outShape)
+	outData := a.Device.BroadcastDiv(aContig.Data(), bContig.Data(), aContig.Shape, bContig.Shape, outShape)
 
 	// Create output tensor manually to avoid ToDevice being called on GPU memory
 	return &Tensor{
-		Data:         outData,
+		data:         StorageFrom(outData),
 		Shape:        outShape,
 		Strides:      ComputeStrides(outShape),
 		Device:       a.Device,

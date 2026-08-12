@@ -21,11 +21,11 @@ func TestBackPropSimpleAdd(t *testing.T) {
 
 	z.BackProp()
 
-	if x.Grad[0] != 1.0 {
-		t.Errorf("Expected x.Grad to be 1.0, got %f", x.Grad[0])
+	if x.Grad()[0] != 1.0 {
+		t.Errorf("Expected x.Grad() to be 1.0, got %f", x.Grad()[0])
 	}
-	if y.Grad[0] != 1.0 {
-		t.Errorf("Expected y.Grad to be 1.0, got %f", y.Grad[0])
+	if y.Grad()[0] != 1.0 {
+		t.Errorf("Expected y.Grad() to be 1.0, got %f", y.Grad()[0])
 	}
 }
 
@@ -38,8 +38,8 @@ func TestBackPropAccumulation(t *testing.T) {
 
 	// If your engine uses "=" instead of "+=" in the Backward closure,
 	// this will wrongly return 1.0 instead of 2.0.
-	if x.Grad[0] != 2.0 {
-		t.Errorf("Expected x.Grad to be 2.0 (accumulation), got %f", x.Grad[0])
+	if x.Grad()[0] != 2.0 {
+		t.Errorf("Expected x.Grad() to be 2.0 (accumulation), got %f", x.Grad()[0])
 	}
 }
 
@@ -54,12 +54,12 @@ func TestBackPropChainRule(t *testing.T) {
 	z.BackProp()
 
 	// dz/dx = y = 3.0
-	if x.Grad[0] != 3.0 {
-		t.Errorf("Chain Rule Fail: Expected x.Grad 3.0, got %f", x.Grad[0])
+	if x.Grad()[0] != 3.0 {
+		t.Errorf("Chain Rule Fail: Expected x.Grad() 3.0, got %f", x.Grad()[0])
 	}
 	// dz/dy = x + 1 = 2.0 + 1.0 = 3.0
-	if y.Grad[0] != 3.0 {
-		t.Errorf("Chain Rule Fail: Expected y.Grad 3.0, got %f", y.Grad[0])
+	if y.Grad()[0] != 3.0 {
+		t.Errorf("Chain Rule Fail: Expected y.Grad() 3.0, got %f", y.Grad()[0])
 	}
 }
 
@@ -70,11 +70,11 @@ func TestBackPropSimpleMul(t *testing.T) {
 
 	z.BackProp()
 
-	if x.Grad[0] != 3.0 {
-		t.Errorf("Expected x.Grad to be 3.0, got %f", x.Grad[0])
+	if x.Grad()[0] != 3.0 {
+		t.Errorf("Expected x.Grad() to be 3.0, got %f", x.Grad()[0])
 	}
-	if y.Grad[0] != 2.0 {
-		t.Errorf("Expected y.Grad to be 2.0, got %f", y.Grad[0])
+	if y.Grad()[0] != 2.0 {
+		t.Errorf("Expected y.Grad() to be 2.0, got %f", y.Grad()[0])
 	}
 }
 
@@ -89,19 +89,19 @@ func TestBackPropMulWithTransposedView(t *testing.T) {
 
 	expectedAGrad := []float32{5, 7, 6, 8}
 	for i, v := range expectedAGrad {
-		if math.Abs(float64(a.Grad[i]-v)) > 1e-9 {
-			t.Errorf("a.Grad[%d]: expected %f, got %f", i, v, a.Grad[i])
+		if math.Abs(float64(a.Grad()[i]-v)) > 1e-9 {
+			t.Errorf("a.Grad()[%d]: expected %f, got %f", i, v, a.Grad()[i])
 		}
 	}
 
-	if bBase.Grad == nil {
-		t.Fatalf("Expected bBase.Grad to be allocated")
+	if bBase.Grad() == nil {
+		t.Fatalf("Expected bBase.Grad() to be allocated")
 	}
 
 	expectedBBaseGrad := []float32{1, 3, 2, 4}
 	for i, v := range expectedBBaseGrad {
-		if math.Abs(float64(bBase.Grad[i]-v)) > 1e-9 {
-			t.Errorf("bBase.Grad[%d]: expected %f, got %f", i, v, bBase.Grad[i])
+		if math.Abs(float64(bBase.Grad()[i]-v)) > 1e-9 {
+			t.Errorf("bBase.Grad()[%d]: expected %f, got %f", i, v, bBase.Grad()[i])
 		}
 	}
 }
@@ -120,14 +120,14 @@ func TestBackPropChain(t *testing.T) {
 
 	z.BackProp()
 
-	if x.Grad[0] != 4.0 {
-		t.Errorf("Expected x.Grad to be 4.0, got %f", x.Grad[0])
+	if x.Grad()[0] != 4.0 {
+		t.Errorf("Expected x.Grad() to be 4.0, got %f", x.Grad()[0])
 	}
-	if y.Grad[0] != 4.0 {
-		t.Errorf("Expected y.Grad to be 4.0, got %f", y.Grad[0])
+	if y.Grad()[0] != 4.0 {
+		t.Errorf("Expected y.Grad() to be 4.0, got %f", y.Grad()[0])
 	}
-	if w.Grad[0] != 5.0 {
-		t.Errorf("Expected w.Grad to be 5.0, got %f", w.Grad[0])
+	if w.Grad()[0] != 5.0 {
+		t.Errorf("Expected w.Grad() to be 5.0, got %f", w.Grad()[0])
 	}
 }
 
@@ -150,13 +150,13 @@ func TestBackPropMatMul(t *testing.T) {
 	expectedGradB := []float32{4, 4, 6, 6}
 
 	for i, v := range expectedGradA {
-		if math.Abs(float64(a.Grad[i]-v)) > 1e-9 {
-			t.Errorf("At index %d: expected a.Grad %f, got %f", i, v, a.Grad[i])
+		if math.Abs(float64(a.Grad()[i]-v)) > 1e-9 {
+			t.Errorf("At index %d: expected a.Grad() %f, got %f", i, v, a.Grad()[i])
 		}
 	}
 	for i, v := range expectedGradB {
-		if math.Abs(float64(b.Grad[i]-v)) > 1e-9 {
-			t.Errorf("At index %d: expected b.Grad %f, got %f", i, v, b.Grad[i])
+		if math.Abs(float64(b.Grad()[i]-v)) > 1e-9 {
+			t.Errorf("At index %d: expected b.Grad() %f, got %f", i, v, b.Grad()[i])
 		}
 	}
 }
@@ -177,13 +177,13 @@ func TestBackPropBroadcastAdd(t *testing.T) {
 	expectedGradY := []float32{2, 2}
 
 	for i, v := range expectedGradX {
-		if math.Abs(float64(x.Grad[i]-v)) > 1e-9 {
-			t.Errorf("At index %d: expected x.Grad %f, got %f", i, v, x.Grad[i])
+		if math.Abs(float64(x.Grad()[i]-v)) > 1e-9 {
+			t.Errorf("At index %d: expected x.Grad() %f, got %f", i, v, x.Grad()[i])
 		}
 	}
 	for i, v := range expectedGradY {
-		if math.Abs(float64(y.Grad[i]-v)) > 1e-9 {
-			t.Errorf("At index %d: expected y.Grad %f, got %f", i, v, y.Grad[i])
+		if math.Abs(float64(y.Grad()[i]-v)) > 1e-9 {
+			t.Errorf("At index %d: expected y.Grad() %f, got %f", i, v, y.Grad()[i])
 		}
 	}
 }
@@ -194,9 +194,9 @@ func TestBackPropSum(t *testing.T) {
 
 	z.BackProp()
 
-	for i := range x.Grad {
-		if x.Grad[i] != 1.0 {
-			t.Errorf("Expected x.Grad[%d] to be 1.0, got %f", i, x.Grad[i])
+	for i := range x.Grad() {
+		if x.Grad()[i] != 1.0 {
+			t.Errorf("Expected x.Grad()[%d] to be 1.0, got %f", i, x.Grad()[i])
 		}
 	}
 }
@@ -207,9 +207,9 @@ func TestBackPropMean(t *testing.T) {
 
 	z.BackProp()
 
-	for i := range x.Grad {
-		if x.Grad[i] != 0.25 {
-			t.Errorf("Expected x.Grad[%d] to be 0.25, got %f", i, x.Grad[i])
+	for i := range x.Grad() {
+		if x.Grad()[i] != 0.25 {
+			t.Errorf("Expected x.Grad()[%d] to be 0.25, got %f", i, x.Grad()[i])
 		}
 	}
 }
@@ -243,23 +243,23 @@ func TestBackPropComplex(t *testing.T) {
 	expectedGradD := []float32{3, 4, 5, 6}
 
 	for i, v := range expectedGradA {
-		if math.Abs(float64(a.Grad[i]-v)) > 1e-9 {
-			t.Errorf("a.Grad[%d]: expected %f, got %f", i, v, a.Grad[i])
+		if math.Abs(float64(a.Grad()[i]-v)) > 1e-9 {
+			t.Errorf("a.Grad()[%d]: expected %f, got %f", i, v, a.Grad()[i])
 		}
 	}
 	for i, v := range expectedGradB {
-		if math.Abs(float64(b.Grad[i]-v)) > 1e-9 {
-			t.Errorf("b.Grad[%d]: expected %f, got %f", i, v, b.Grad[i])
+		if math.Abs(float64(b.Grad()[i]-v)) > 1e-9 {
+			t.Errorf("b.Grad()[%d]: expected %f, got %f", i, v, b.Grad()[i])
 		}
 	}
 	for i, v := range expectedGradC {
-		if math.Abs(float64(c.Grad[i]-v)) > 1e-9 {
-			t.Errorf("c.Grad[%d]: expected %f, got %f", i, v, c.Grad[i])
+		if math.Abs(float64(c.Grad()[i]-v)) > 1e-9 {
+			t.Errorf("c.Grad()[%d]: expected %f, got %f", i, v, c.Grad()[i])
 		}
 	}
 	for i, v := range expectedGradD {
-		if math.Abs(float64(d.Grad[i]-v)) > 1e-9 {
-			t.Errorf("d.Grad[%d]: expected %f, got %f", i, v, d.Grad[i])
+		if math.Abs(float64(d.Grad()[i]-v)) > 1e-9 {
+			t.Errorf("d.Grad()[%d]: expected %f, got %f", i, v, d.Grad()[i])
 		}
 	}
 }
@@ -274,7 +274,7 @@ func BenchmarkBackPropChain(b *testing.B) {
 		z := sum.Mul(w)
 		z.BackProp()
 		// Reset gradients for next iteration
-		x.Grad[0], y.Grad[0], w.Grad[0] = 0.0, 0.0, 0.0
+		x.Grad()[0], y.Grad()[0], w.Grad()[0] = 0.0, 0.0, 0.0
 	}
 }
 
@@ -286,11 +286,11 @@ func BenchmarkBackPropMatMul(b *testing.B) {
 		c := a.MatMul(bb)
 		c.BackProp()
 		// Reset gradients for next iteration
-		for i := range a.Grad {
-			a.Grad[i] = 0.0
+		for i := range a.Grad() {
+			a.Grad()[i] = 0.0
 		}
-		for i := range bb.Grad {
-			bb.Grad[i] = 0.0
+		for i := range bb.Grad() {
+			bb.Grad()[i] = 0.0
 		}
 	}
 }
@@ -310,17 +310,17 @@ func BenchmarkComplexBackProp(b *testing.B) {
 		loss.BackProp()
 		// Reset gradients for next iteration
 
-		for i := range a.Grad {
-			a.Grad[i] = 0.0
+		for i := range a.Grad() {
+			a.Grad()[i] = 0.0
 		}
-		for i := range bb.Grad {
-			bb.Grad[i] = 0.0
+		for i := range bb.Grad() {
+			bb.Grad()[i] = 0.0
 		}
-		for i := range c.Grad {
-			c.Grad[i] = 0.0
+		for i := range c.Grad() {
+			c.Grad()[i] = 0.0
 		}
-		for i := range d.Grad {
-			d.Grad[i] = 0.0
+		for i := range d.Grad() {
+			d.Grad()[i] = 0.0
 		}
 	}
 }

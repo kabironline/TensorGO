@@ -125,8 +125,8 @@ func TestMNISTGPU(t *testing.T) {
 			if cu.IsGPU() && currentBatchSize == batchSize {
 				// TRUE PyTorch pattern: Reuse pre-allocated buffer tensors directly
 				// Just copy new data into them - NO new tensor allocation!
-				cu.WriteToDevice(batchInputBuffer.Data, batchInputData)
-				cu.WriteToDevice(batchTargetBuffer.Data, batchTargetData)
+				cu.WriteToDevice(batchInputBuffer.Data(), batchInputData)
+				cu.WriteToDevice(batchTargetBuffer.Data(), batchTargetData)
 
 				// Use the buffer tensors AS-IS (they were properly created with NewEmptyTensor)
 				batchInput = batchInputBuffer
@@ -153,10 +153,10 @@ func TestMNISTGPU(t *testing.T) {
 			if batch%samplingInterval == 0 {
 				var lossVal float32
 				if cu.IsGPU() {
-					lossData := cu.ToCPU(loss.Data)
+					lossData := cu.ToCPU(loss.Data())
 					lossVal = lossData[0]
 				} else {
-					lossVal = loss.Data[0]
+					lossVal = loss.Data()[0]
 				}
 				sampledLossSum += lossVal
 				sampledCount++
@@ -226,24 +226,19 @@ func TestMNISTGPU(t *testing.T) {
 
 		// Create tensors from preloaded device data (no additional copy)
 		inSlice := deviceTestInputs[start*28*28 : end*28*28]
-		batchTest := &tensor.Tensor{
-			Data:         inSlice,
-			Grad:         nil,
-			Shape:        []int{currentBatchSize, 28 * 28},
-			Strides:      []int{28 * 28, 1},
-			Parents:      nil,
-			Backward:     nil,
-			Offset:       0,
-			Device:       cu,
-			RequiresGrad: false,
-		}
+		batchTest := tensor.FromData(
+			inSlice,
+			[]int{currentBatchSize, 28 * 28},
+			cu,
+			false, // requiresGrad
+		)
 
 		predictions := model.Forward(batchTest)
 
 		// Copy predictions to CPU for evaluation
-		predData := predictions.Data
+		predData := predictions.Data()
 		if cu.IsGPU() {
-			predData = cu.ToCPU(predictions.Data)
+			predData = cu.ToCPU(predictions.Data())
 		}
 
 		// Count correct predictions

@@ -1,6 +1,7 @@
 package tensor_test
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -9,6 +10,20 @@ import (
 )
 
 // --- Unit Tests ---
+
+func checkMatrix(a, b []float32) (bool, error) {
+	if len(a) != len(b) {
+		return false, fmt.Errorf("Length mismatch: %d vs %d", len(a), len(b))
+
+	}
+
+	for i := range a {
+		if math.Abs(float64(a[i]-b[i])) > 1e-9 {
+			return false, fmt.Errorf("Value mismatch at index %d: %f vs %f", i, a[i], b[i])
+		}
+	}
+	return true, nil
+}
 
 func TestNewTensor(t *testing.T) {
 	data := []float32{1, 2, 3, 4, 5, 6}
@@ -36,8 +51,8 @@ func TestNewIdentityTensor(t *testing.T) {
 	size := 4
 	tens := tensor.NewIdentityTensor(size)
 
-	if len(tens.Data) != size*size {
-		t.Errorf("Expected data length %d, got %d", size*size, len(tens.Data))
+	if len(tens.Data()) != size*size {
+		t.Errorf("Expected data length %d, got %d", size*size, len(tens.Data()))
 	}
 
 	// Check identity property
@@ -45,7 +60,7 @@ func TestNewIdentityTensor(t *testing.T) {
 	// Off-diagonal elements should be 0
 	for i := range size {
 		for j := range size {
-			val := tens.Data[i*size+j]
+			val := tens.Data()[i*size+j]
 			if i == j {
 				if val != 1.0 {
 					t.Errorf("Expected diagonal element [%d,%d] to be 1, got %f", i, j, val)
@@ -100,11 +115,11 @@ func TestBroadcastAdd(t *testing.T) {
 		t.Fatalf("Expected result size 9, got %d", tensor.TotalSize(res.Shape))
 	}
 
-	for i, v := range expected {
-		if math.Abs(float64(res.Data[i]-v)) > 1e-9 {
-			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data[i])
-		}
+	check, err := checkMatrix(res.Data(), expected)
+	if !check {
+		t.Errorf("Broadcast add result mismatch: %v", err)
 	}
+
 }
 
 func TestBroadcastMul(t *testing.T) {
@@ -117,10 +132,9 @@ func TestBroadcastMul(t *testing.T) {
 	res := tensor.BroadcastMulOp(a, b)
 
 	expected := []float32{10, 40, 30, 80}
-	for i, v := range expected {
-		if math.Abs(float64(res.Data[i]-v)) > 1e-9 {
-			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data[i])
-		}
+	check, err := checkMatrix(res.Data(), expected)
+	if !check {
+		t.Errorf("Broadcast mul result mismatch: %v", err)
 	}
 }
 
@@ -168,10 +182,10 @@ func TestMatMul(t *testing.T) {
 	res := a.MatMul(b)
 
 	expected := []float32{58, 64, 139, 154}
-	for i, v := range expected {
-		if math.Abs(float64(res.Data[i]-v)) > 1e-9 {
-			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data[i])
-		}
+
+	check, err := checkMatrix(res.Data(), expected)
+	if !check {
+		t.Errorf("MatMul result mismatch: %v", err)
 	}
 }
 
@@ -190,13 +204,37 @@ func TestContiguous(t *testing.T) {
 	}
 
 	// Check data order in contiguous copy
-	// Transposed was: [[1, 4], [2, 5], [3, 6]]
-	// Flat: [1, 4, 2, 5, 3, 6]
 	expected := []float32{1, 4, 2, 5, 3, 6}
-	for i, v := range expected {
-		if contig.Data[i] != v {
-			t.Errorf("At index %d: expected %f, got %f", i, v, contig.Data[i])
-		}
+	check, err := checkMatrix(contig.Data(), expected)
+	if !check {
+		t.Errorf("Contiguous data mismatch: %v", err)
+	}
+}
+
+// RHS transposed: (2,3) @ (2,3)^T -> (2,2)
+func TestMatMulTransposedRHS(t *testing.T) {
+	a := tensor.NewTensor([]float32{1, 2, 3, 4, 5, 6}, []int{2, 3})
+	// laid out so that b^T == [[7,8],[9,10],[11,12]]
+	b := tensor.NewTensor([]float32{7, 9, 11, 8, 10, 12}, []int{2, 3})
+
+	res := a.MatMul(b.Transpose([]int{1, 0}))
+
+	expected := []float32{58, 64, 139, 154} // shape (2,2)
+	if check, err := checkMatrix(res.Data(), expected); !check {
+		t.Errorf("MatMul with transposed RHS mismatch: %v", err)
+	}
+}
+
+// LHS transposed: (2,3)^T @ (2,3) -> (3,3)  — what you originally wrote
+func TestMatMulTransposedLHS(t *testing.T) {
+	a := tensor.NewTensor([]float32{1, 2, 3, 4, 5, 6}, []int{2, 3})
+	b := tensor.NewTensor([]float32{7, 8, 9, 10, 11, 12}, []int{2, 3})
+
+	res := a.Transpose([]int{1, 0}).MatMul(b)
+
+	expected := []float32{47, 52, 57, 64, 71, 78, 81, 90, 99} // shape (3,3)
+	if check, err := checkMatrix(res.Data(), expected); !check {
+		t.Errorf("MatMul with transposed LHS mismatch: %v", err)
 	}
 }
 

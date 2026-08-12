@@ -7,8 +7,8 @@ import (
 )
 
 type Tensor struct {
-	Data    []float32
-	Grad    []float32
+	data    *Storage
+	grad    *Storage
 	Shape   []int
 	Strides []int
 	Parents []*Tensor // Tensors that were used to compute this tensor
@@ -46,13 +46,15 @@ func NewTensor(data []float32, shape []int, parents ...*Tensor) *Tensor {
 		}
 	}
 
+	dataStorage := StorageFrom(data)
+
 	return &Tensor{
-		Data:    data,
+		data:    dataStorage,
 		Shape:   shape,
 		Strides: computeStrides(shape),
-		// Grad is allocated lazily to avoid unnecessary allocations for tensors
+		// grad is allocated lazily to avoid unnecessary allocations for tensors
 		// that never participate in backpropagation.
-		Grad:         nil,
+		grad:         nil,
 		Parents:      parents,
 		Device:       dev,
 		RequiresGrad: requiresGrad,
@@ -69,12 +71,34 @@ func NewEmptyTensor(shape []int, dev backend.Backend) *Tensor {
 	for _, s := range shape {
 		size *= s
 	}
+
+	// Bridge: keep using the []float32 Allocate so the F32 compute path (and the
+	// CUDA fake-device-slice) keep working. Switch to dev.AllocStorage once the
+	// compute ops take *Storage (P5+) and no longer call F32() on device memory.
+	dataStorage := StorageFrom(dev.Allocate(size))
+
 	return &Tensor{
-		Data:       dev.Allocate(size),
+		data:       dataStorage,
 		Shape:      shape,
 		Strides:    computeStrides(shape),
 		Device:     dev,
 		contiguous: true,
+	}
+}
+
+// FromData wraps an existing buffer into a contiguous Tensor WITHOUT a host->device
+// copy. It is the exported way for packages outside `tensor` (e.g. nn layers) to
+// build a Tensor from a result buffer returned by a backend op and attach autograd
+// metadata; set Backward on the result afterward. Strides are row-major for shape.
+func FromData(data []float32, shape []int, dev backend.Backend, requiresGrad bool, parents ...*Tensor) *Tensor {
+	return &Tensor{
+		data:         StorageFrom(data),
+		Shape:        shape,
+		Strides:      ComputeStrides(shape),
+		Device:       dev,
+		RequiresGrad: requiresGrad,
+		Parents:      parents,
+		contiguous:   true,
 	}
 }
 
@@ -83,37 +107,58 @@ func NewIdentityTensor(size int) *Tensor {
 	dev := backend.AutoSelectBackend()
 
 	// For GPU backends, create on CPU then copy to device
-	if dev.IsGPU() {
-		if transfer, ok := dev.(backend.MemoryTransfer); ok {
-			h_data := make([]float32, size*size)
-			for i := 0; i < size; i++ {
-				h_data[i*size+i] = 1.0
-			}
-			data := transfer.ToDevice(h_data)
-			return &Tensor{
-				Data:       data,
-				Shape:      []int{size, size},
-				Strides:    []int{size, 1},
-				Grad:       nil,
-				Device:     dev,
-				contiguous: true,
-			}
-		}
-	}
+	// TODO: IMPLMENET LATER
+	// if dev.IsGPU() {
+	// 	if transfer, ok := dev.(backend.MemoryTransfer); ok {
+	// 		h_data := make([]float32, size*size)
+	// 		for i := 0; i < size; i++ {
+	// 			h_data[i*size+i] = 1.0
+	// 		}
+	// 		data := transfer.ToDevice(h_data)
+	// 		return &Tensor{
+	// 			data:    data,
+	// 			Shape:   []int{size, size},
+	// 			Strides: []int{size, 1},
+	// 			grad:         nil,
+	// 			Device:       dev,
+	// 			contiguous:   true,
+	// 		}
+	// 	}
+	// }
 
 	// For CPU backend (or GPU without MemoryTransfer), allocate and initialize directly
 	data := dev.Allocate(size * size)
 	for i := 0; i < size; i++ {
 		data[i*size+i] = 1.0
 	}
+
+	dataStorage := StorageFrom(data)
+
 	return &Tensor{
-		Data:       data,
+		data:       dataStorage,
 		Shape:      []int{size, size},
 		Strides:    []int{size, 1},
-		Grad:       nil,
+		grad:       nil,
 		Device:     dev,
 		contiguous: true,
 	}
+}
+
+// Data and Grad are transitional shims that expose the underlying storage as a
+// []float32 so existing F32-only call sites keep working. DELETE in Phase 6.
+// Grad returns nil (rather than panicking) when no gradient is allocated yet,
+// so `t.Grad() == nil` remains a valid "is grad allocated?" check.
+func (t *Tensor) Data() []float32 {
+	if t.data == nil {
+		return nil
+	}
+	return t.data.F32()
+}
+func (t *Tensor) Grad() []float32 {
+	if t.grad == nil {
+		return nil
+	}
+	return t.grad.F32()
 }
 
 // Helper to calculate strides for row-major order
@@ -135,8 +180,8 @@ func (t *Tensor) RandomInit() {
 
 	if len(t.Shape) == 0 {
 		// fallback: use total elements for both
-		fanIn = len(t.Data)
-		fanOut = len(t.Data)
+		fanIn = t.data.Length()
+		fanOut = t.data.Length()
 	} else if len(t.Shape) == 1 {
 		// vector: treat as both in and out
 		fanIn = t.Shape[0]
@@ -162,12 +207,12 @@ func (t *Tensor) RandomInit() {
 	}
 
 	stdDev := float32(math.Sqrt(2.0 / float64(fanIn+fanOut)))
-	t.Device.Normal(t.Data, 0.0, stdDev, len(t.Data))
+	t.Device.Normal(t.Data(), 0.0, stdDev, t.data.Length())
 }
 
 // ZeroInit fills the tensor with zeros
 func (t *Tensor) ZeroInit() {
-	t.Device.Fill(t.Data, 0.0, len(t.Data))
+	t.Device.Fill(t.Data(), 0.0, t.data.Length())
 }
 
 // AccumulateGrad adds the given gradient data to the tensor's gradient.
@@ -187,13 +232,13 @@ func (t *Tensor) AccumulateGrad(grad []float32) {
 	// Fast path: contiguous tensors use backend Add operation
 	if t.Contiguous() && t.Offset == 0 {
 		// Use backend's Add operation: t.Grad = t.Grad + grad
-		t.Device.Add(t.Grad, grad, t.Grad, len(grad))
+		t.Device.Add(t.Grad(), grad, t.Grad(), t.grad.Length())
 		return
 	}
 
 	// Medium-fast path: aligned gradients
-	if len(grad) == len(t.Grad) && t.Offset == 0 {
-		t.Device.Add(t.Grad, grad, t.Grad, len(grad))
+	if len(grad) == t.grad.Length() && t.Offset == 0 {
+		t.Device.Add(t.Grad(), grad, t.Grad(), t.grad.Length())
 		return
 	}
 
@@ -202,7 +247,7 @@ func (t *Tensor) AccumulateGrad(grad []float32) {
 	if t.Device.IsGPU() {
 		if memTransfer, ok := t.Device.(backend.MemoryTransfer); ok {
 			// Copy gradients to CPU
-			cpuGrad := memTransfer.ToCPU(t.Grad)
+			cpuGrad := memTransfer.ToCPU(t.Grad())
 			cpuIncomingGrad := memTransfer.ToCPU(grad)
 
 			// Accumulate on CPU
@@ -212,7 +257,7 @@ func (t *Tensor) AccumulateGrad(grad []float32) {
 			}
 
 			// Copy back to GPU
-			t.Grad = memTransfer.ToDevice(cpuGrad)
+			t.grad = StorageFrom(memTransfer.ToDevice(cpuGrad))
 			return
 		}
 	}
@@ -220,7 +265,7 @@ func (t *Tensor) AccumulateGrad(grad []float32) {
 	// CPU fallback for views
 	for i, g := range grad {
 		physicalIdx := t.PhysicalIndexFromLinearIndex(i)
-		t.Grad[physicalIdx] += g
+		t.Grad()[physicalIdx] += g
 	}
 }
 
@@ -242,13 +287,13 @@ func (t *Tensor) Contiguous() bool {
 // Only call this when the tensor is no longer needed.
 // WARNING: Do not use the tensor after calling Free()!
 func (t *Tensor) Free() {
-	if t.Data != nil && t.Device.IsGPU() {
-		t.Device.Free(t.Data)
-		t.Data = nil
+	if t.data != nil && t.Device.IsGPU() {
+		t.Device.Free(t.Data())
+		t.data = nil
 	}
-	if t.Grad != nil && t.Device.IsGPU() {
-		t.Device.Free(t.Grad)
-		t.Grad = nil
+	if t.grad != nil && t.Device.IsGPU() {
+		t.Device.Free(t.Grad())
+		t.grad = nil
 	}
 }
 
@@ -259,13 +304,13 @@ func (t *Tensor) ClearGraph() {
 	t.Parents = nil
 	t.Backward = nil
 	// Free GPU memory for Data and Grad
-	if t.Data != nil && t.Device.IsGPU() {
-		t.Device.Free(t.Data)
-		t.Data = nil
+	if t.data != nil && t.Device.IsGPU() {
+		t.Device.Free(t.Data())
+		t.data = nil
 	}
-	if t.Grad != nil && t.Device.IsGPU() {
-		t.Device.Free(t.Grad)
-		t.Grad = nil
+	if t.grad != nil && t.Device.IsGPU() {
+		t.Device.Free(t.Grad())
+		t.grad = nil
 	}
 }
 
@@ -318,11 +363,11 @@ func (t *Tensor) clearGraphHelper(visited map[*Tensor]bool) {
 
 // ensureGrad makes sure t.Grad is allocated. It's safe to call multiple times.
 func (t *Tensor) ensureGrad() {
-	if t.Grad == nil {
+	if t.grad == nil {
 		// Use underlying data length to ensure we can index into physical positions
-		t.Grad = t.Device.Allocate(len(t.Data))
+		t.grad = StorageFrom(t.Device.Allocate(t.data.Length()))
 		// Initialize gradient to zero
-		t.Device.Fill(t.Grad, 0, len(t.Grad))
+		t.Device.Fill(t.Grad(), 0, t.grad.Length())
 	}
 }
 
@@ -330,20 +375,20 @@ func (t *Tensor) ensureGrad() {
 // for packages that create parameters which will always participate in
 // backpropagation (e.g., model weights and biases).
 func (t *Tensor) AllocGrad() {
-	if t.Grad == nil {
-		t.Grad = t.Device.Allocate(TotalSize(t.Shape))
-		t.Device.Fill(t.Grad, 0, len(t.Grad))
+	if t.grad == nil {
+		t.grad = StorageFrom(t.Device.Allocate(TotalSize(t.Shape)))
+		t.Device.Fill(t.Grad(), 0, t.grad.Length())
 	}
 }
 
 // ToGradTensor returns a new Tensor sharing the Grad data of this tensor.
 // Useful for autograd where we need to perform tensor operations on gradients.
 func (t *Tensor) ToGradTensor() *Tensor {
-	if t.Grad == nil {
+	if t.grad == nil {
 		t.AllocGrad()
 	}
 	return &Tensor{
-		Data:         t.Grad,
+		data:         t.grad,
 		Shape:        append([]int(nil), t.Shape...),
 		Strides:      append([]int(nil), t.Strides...),
 		Offset:       t.Offset,
@@ -360,19 +405,19 @@ func (t *Tensor) To(dev backend.Backend) *Tensor {
 
 	// Transfer data
 	if transfer, ok := dev.(backend.MemoryTransfer); ok {
-		t.Data = transfer.ToDevice(t.Data)
-		if t.Grad != nil {
-			t.Grad = transfer.ToDevice(t.Grad)
+		t.data = StorageFrom(transfer.ToDevice(t.data.F32()))
+		if t.grad != nil {
+			t.grad = StorageFrom(transfer.ToDevice(t.grad.F32()))
 		}
 	} else {
 		// Fallback: copy via CPU if possible, or just copy data
-		newData := dev.Allocate(len(t.Data))
-		dev.Copy(newData, t.Data)
-		t.Data = newData
-		if t.Grad != nil {
-			newGrad := dev.Allocate(len(t.Grad))
-			dev.Copy(newGrad, t.Grad)
-			t.Grad = newGrad
+		newData := StorageFrom(dev.Allocate(t.data.Length()))
+		dev.Copy(newData.F32(), t.data.F32())
+		t.data = newData
+		if t.grad != nil {
+			newGrad := StorageFrom(dev.Allocate(t.grad.Length()))
+			dev.Copy(newGrad.F32(), t.grad.F32())
+			t.grad = newGrad
 		}
 	}
 

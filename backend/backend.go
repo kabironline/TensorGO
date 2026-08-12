@@ -1,5 +1,7 @@
 package backend
 
+import "github.com/kabironline/nanograd/storage"
+
 // ============================================================================
 // Core Backend Interface - Minimal Set of Required Operations
 // ============================================================================
@@ -15,6 +17,7 @@ type Backend interface {
 
 	// Memory management
 	MemoryManager
+	StorageManager
 
 	// Core operations
 	ElementWiseOps
@@ -109,6 +112,21 @@ type MemoryManager interface {
 	Copy(dst, src []float32)
 }
 
+// StorageManager allocates and releases dtype-aware *storage.Storage buffers. This
+// is the Storage-typed successor to MemoryManager: on CPU it wraps a host []byte;
+// on GPU it wraps a device handle whose bytes are not addressable from Go. Old
+// MemoryManager (`[]float32`) methods remain as thin wrappers during the migration.
+type StorageManager interface {
+	// AllocStorage allocates numel elements of dtype dt on this device.
+	AllocStorage(numel int, dt storage.DType) *storage.Storage
+
+	// FreeStorage releases a storage's buffer (no-op for host, pool return for GPU).
+	FreeStorage(s *storage.Storage)
+
+	// CopyStorage copies src into dst on the same device (same dtype and length).
+	CopyStorage(dst, src *storage.Storage)
+}
+
 // MemoryTransfer is an optional interface for backends that support device transfers
 type MemoryTransfer interface {
 	// ToDevice transfers data from CPU to this device
@@ -143,27 +161,6 @@ type MathOps interface {
 	Log(a []float32, size int) []float32
 	Sqrt(a []float32, size int) []float32
 	Pow(a []float32, power float32, size int) []float32
-}
-
-// ============================================================================
-// Matrix Operations Interface
-// ============================================================================
-
-type MatrixOps interface {
-	// MatMul performs matrix multiplication: C = A @ B
-	// a: data buffer for matrix A with shape [m, k]
-	// b: data buffer for matrix B with shape [k, n]
-	// m, n, k: matrix dimensions
-	MatMul(a, b, out []float32, m, n, k, strideA, strideB int) []float32
-
-	// MatMulAdd performs matrix multiplication and addition: C = A @ B + C
-	MatMulAdd(a, b, c, out []float32, m, n, k, strideA, strideB int)
-
-	// MatMulTransA performs matrix multiplication with A transposed: C = A^T @ B
-	MatMulTransA(a, b, out []float32, m, n, k, strideA, strideB int) []float32
-
-	// MatMulTransB performs matrix multiplication with B transposed: C = A @ B^T
-	MatMulTransB(a, b, out []float32, m, n, k, strideA, strideB int) []float32
 }
 
 // BatchedMatrixOps is an optional interface for optimized batched operations

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"E:\\\\Projects\\\\nanograd\\\\\" | head -20)",
+      "Bash(cd /E/Projects/nanograd && find . -type f -name \"*.go\" | wc -l)",
+      "Bash(go build *)"
+    ]
+  }
+}

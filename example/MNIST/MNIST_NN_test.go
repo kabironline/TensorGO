@@ -70,7 +70,7 @@ func TestMNIST(t *testing.T) {
 
 	// Training loop with CrossEntropy loss
 	const numEpochs = 5
-	const batchSize = 32 
+	const batchSize = 32
 
 	for epoch := range numEpochs {
 		var totalLoss float32 = 0.0
@@ -104,7 +104,7 @@ func TestMNIST(t *testing.T) {
 			loss.BackProp()
 			optimizer.Step()
 
-			totalLoss += loss.Data[0]
+			totalLoss += loss.Data()[0]
 			batchCount++
 		}
 
@@ -145,10 +145,10 @@ func TestMNIST(t *testing.T) {
 		// Count correct predictions
 		for i := 0; i < currentBatchSize; i++ {
 			maxIdx := 0
-			maxVal := predictions.Data[i*10]
+			maxVal := predictions.Data()[i*10]
 			for j := 1; j < 10; j++ {
-				if predictions.Data[i*10+j] > maxVal {
-					maxVal = predictions.Data[i*10+j]
+				if predictions.Data()[i*10+j] > maxVal {
+					maxVal = predictions.Data()[i*10+j]
 					maxIdx = j
 				}
 			}

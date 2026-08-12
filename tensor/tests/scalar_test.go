@@ -15,18 +15,18 @@ func TestAddScalar(t *testing.T) {
 	res := tens.AddScalar(10.5)
 
 	expected := []float32{11.5, 12.5, 13.5, 14.5}
-	if len(res.Data) != len(expected) {
-		t.Fatalf("Expected data length %d, got %d", len(expected), len(res.Data))
+	if len(res.Data()) != len(expected) {
+		t.Fatalf("Expected data length %d, got %d", len(expected), len(res.Data()))
 	}
 
 	for i, v := range expected {
-		if res.Data[i] != v {
-			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data[i])
+		if res.Data()[i] != v {
+			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data()[i])
 		}
 	}
 
 	// Ensure original tensor is not modified
-	if tens.Data[0] != 1 {
+	if tens.Data()[0] != 1 {
 		t.Error("Original tensor was modified by AddScalar")
 	}
 }
@@ -40,8 +40,8 @@ func TestSubScalar(t *testing.T) {
 
 	expected := []float32{5, 15, 25, 35}
 	for i, v := range expected {
-		if res.Data[i] != v {
-			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data[i])
+		if res.Data()[i] != v {
+			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data()[i])
 		}
 	}
 }
@@ -55,8 +55,8 @@ func TestMulScalar(t *testing.T) {
 
 	expected := []float32{3, 6, 9, 12}
 	for i, v := range expected {
-		if res.Data[i] != v {
-			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data[i])
+		if res.Data()[i] != v {
+			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data()[i])
 		}
 	}
 }
@@ -70,8 +70,8 @@ func TestDivScalar(t *testing.T) {
 
 	expected := []float32{1, 2, 3, 4}
 	for i, v := range expected {
-		if res.Data[i] != v {
-			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data[i])
+		if res.Data()[i] != v {
+			t.Errorf("At index %d: expected %f, got %f", i, v, res.Data()[i])
 		}
 	}
 }

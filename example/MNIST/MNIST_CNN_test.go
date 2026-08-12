@@ -108,7 +108,7 @@ func TestMNISTCNN(t *testing.T) {
 
 			// Loss calculation (CrossEntropy)
 			loss := nn.CrossEntropyLoss(output, batchTarget)
-			totalLoss += loss.Data[0]
+			totalLoss += loss.Data()[0]
 
 			// Backward pass
 			optimizer.ZeroGrad()
@@ -119,7 +119,7 @@ func TestMNISTCNN(t *testing.T) {
 
 			batchCount++
 			if batchCount%20 == 0 {
-				fmt.Printf("Epoch %d, Batch %d, Loss: %.4f\n", epoch+1, batchCount, loss.Data[0])
+				fmt.Printf("Epoch %d, Batch %d, Loss: %.4f\n", epoch+1, batchCount, loss.Data()[0])
 			}
 		}
 		fmt.Printf("Epoch %d completed. Average Loss: %.4f\n", epoch+1, totalLoss/float32(batchCount))
@@ -143,10 +143,10 @@ func TestMNISTCNN(t *testing.T) {
 
 		// Find predicted class
 		pred := 0
-		maxVal := output.Data[0]
+		maxVal := output.Data()[0]
 		for k := 1; k < 10; k++ {
-			if output.Data[k] > maxVal {
-				maxVal = output.Data[k]
+			if output.Data()[k] > maxVal {
+				maxVal = output.Data()[k]
 				pred = k
 			}
 		}

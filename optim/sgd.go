@@ -15,18 +15,18 @@ func NewSGD(params []*tensor.Tensor, lr float32) *SGD {
 
 func (s *SGD) Step() {
 	for _, p := range s.Params {
-		if p.Grad == nil {
+		if p.Grad() == nil {
 			continue
 		}
-		p.Device.StepSGD(p.Data, p.Grad, s.LR)
+		p.Device.StepSGD(p.Data(), p.Grad(), s.LR)
 	}
 }
 
 // ZeroGrad sets all gradients of the parameters to zero.
 func (s *SGD) ZeroGrad() {
 	for _, p := range s.Params {
-		if p.Grad != nil {
-			p.Device.Fill(p.Grad, 0, len(p.Grad))
+		if p.Grad() != nil {
+			p.Device.Fill(p.Grad(), 0, len(p.Grad()))
 		}
 	}
 }

@@ -19,8 +19,8 @@ func NewAdam(params []*tensor.Tensor, lr float32) *Adam {
 	m := make([][]float32, len(params))
 	v := make([][]float32, len(params))
 	for i, p := range params {
-		m[i] = p.Device.Allocate(len(p.Data))
-		v[i] = p.Device.Allocate(len(p.Data))
+		m[i] = p.Device.Allocate(len(p.Data()))
+		v[i] = p.Device.Allocate(len(p.Data()))
 		// Initialize with zeros
 		p.Device.Fill(m[i], 0, len(m[i]))
 		p.Device.Fill(v[i], 0, len(v[i]))
@@ -40,17 +40,17 @@ func NewAdam(params []*tensor.Tensor, lr float32) *Adam {
 func (a *Adam) Step() {
 	a.T++
 	for i, p := range a.Params {
-		if p.Grad == nil {
+		if p.Grad() == nil {
 			continue
 		}
-		p.Device.StepAdam(p.Data, p.Grad, a.M[i], a.V[i], a.LR, a.Beta1, a.Beta2, a.Eps, a.T)
+		p.Device.StepAdam(p.Data(), p.Grad(), a.M[i], a.V[i], a.LR, a.Beta1, a.Beta2, a.Eps, a.T)
 	}
 }
 
 func (a *Adam) ZeroGrad() {
 	for _, p := range a.Params {
-		if p.Grad != nil {
-			p.Device.Fill(p.Grad, 0, len(p.Grad))
+		if p.Grad() != nil {
+			p.Device.Fill(p.Grad(), 0, len(p.Grad()))
 		}
 	}
 }

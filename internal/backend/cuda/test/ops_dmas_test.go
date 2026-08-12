@@ -36,7 +36,7 @@ func TestCudaDMAS(t *testing.T) {
 	assert.NotNil(t, c)
 	cu.Sync()
 
-	res := cu.ToCPU(c.Data)
+	res := cu.ToCPU(c.Data())
 	for i := 0; i < size; i++ {
 		assert.Equal(t, hA[i]+hB[i], res[i])
 	}
@@ -46,7 +46,7 @@ func TestCudaDMAS(t *testing.T) {
 	assert.NotNil(t, c)
 	cu.Sync()
 
-	res = cu.ToCPU(c.Data)
+	res = cu.ToCPU(c.Data())
 	for i := 0; i < size; i++ {
 		assert.Equal(t, hA[i]-hB[i], res[i])
 	}
@@ -56,7 +56,7 @@ func TestCudaDMAS(t *testing.T) {
 	assert.NotNil(t, c)
 	cu.Sync()
 
-	res = cu.ToCPU(c.Data)
+	res = cu.ToCPU(c.Data())
 	for i := 0; i < size; i++ {
 		assert.Equal(t, hA[i]*hB[i], res[i])
 	}
@@ -139,7 +139,7 @@ func TestCudaAddVectorized(t *testing.T) {
 			assert.NotNil(t, c)
 			cu.Sync()
 
-			result := cu.ToCPU(c.Data)
+			result := cu.ToCPU(c.Data())
 
 			for i := 0; i < size; i++ {
 				expected := a_data[i] + b_data[i]
@@ -179,7 +179,7 @@ func TestCudaSubVectorized(t *testing.T) {
 			assert.NotNil(t, c)
 			cu.Sync()
 
-			result := cu.ToCPU(c.Data)
+			result := cu.ToCPU(c.Data())
 
 			for i := 0; i < size; i++ {
 				expected := a_data[i] - b_data[i]
@@ -211,7 +211,7 @@ func TestCudaAddSubEdgeCases(t *testing.T) {
 		assert.NotNil(t, c)
 		cu.Sync()
 
-		result := cu.ToCPU(c.Data)
+		result := cu.ToCPU(c.Data())
 		for i := 0; i < size; i++ {
 			assert.Equal(t, float32(0), result[i])
 		}
@@ -235,7 +235,7 @@ func TestCudaAddSubEdgeCases(t *testing.T) {
 		assert.NotNil(t, c)
 		cu.Sync()
 
-		result := cu.ToCPU(c.Data)
+		result := cu.ToCPU(c.Data())
 		for i := 0; i < size; i++ {
 			assert.Equal(t, float32(0), result[i])
 		}
@@ -259,7 +259,7 @@ func TestCudaAddSubEdgeCases(t *testing.T) {
 		assert.NotNil(t, c)
 		cu.Sync()
 
-		result := cu.ToCPU(c.Data)
+		result := cu.ToCPU(c.Data())
 		for i := 0; i < size; i++ {
 			assert.Equal(t, float32(-1.0), result[i])
 		}

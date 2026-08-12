@@ -1,6 +1,9 @@
 package tensor
 
 import (
+	"fmt"
+
+	"github.com/kabironline/nanograd/backend"
 	"github.com/kabironline/nanograd/internal/pools"
 	"gonum.org/v1/gonum/mat"
 )
@@ -9,12 +12,12 @@ import (
 func (a *Tensor) Add(b *Tensor) *Tensor {
 	// Simple path if shapes match
 	if sameShape(a.Shape, b.Shape) {
-		outData := a.Device.Allocate(len(a.Data))
-		a.Device.Add(a.Data, b.Data, outData, len(a.Data))
+		outData := a.Device.Allocate(TotalSize(a.Shape))
+		a.Device.Add(a.Data(), b.Data(), outData, TotalSize(a.Shape))
 
 		// Create output tensor manually to avoid ToDevice being called on GPU memory
 		out := &Tensor{
-			Data:         outData,
+			data:         StorageFrom(outData),
 			Shape:        append([]int{}, a.Shape...),
 			Strides:      ComputeStrides(a.Shape),
 			Device:       a.Device,
@@ -24,8 +27,8 @@ func (a *Tensor) Add(b *Tensor) *Tensor {
 		}
 
 		out.Backward = func() {
-			a.AccumulateGrad(out.Grad)
-			b.AccumulateGrad(out.Grad)
+			a.AccumulateGrad(out.Grad())
+			b.AccumulateGrad(out.Grad())
 		}
 		return out
 	}
@@ -36,17 +39,17 @@ func (a *Tensor) Add(b *Tensor) *Tensor {
 	out.Backward = func() {
 		// Optimization: Skip ReduceSumTo if shapes match exactly.
 		if sameShape(out.Shape, a.Shape) {
-			a.AccumulateGrad(out.Grad)
+			a.AccumulateGrad(out.Grad())
 		} else {
-			gradA := ReduceSumTo(a.Device, out.Grad, out.Shape, a.Shape)
+			gradA := ReduceSumTo(a.Device, out.Grad(), out.Shape, a.Shape)
 			a.AccumulateGrad(gradA)
 			a.Device.Free(gradA)
 		}
 
 		if sameShape(out.Shape, b.Shape) {
-			b.AccumulateGrad(out.Grad)
+			b.AccumulateGrad(out.Grad())
 		} else {
-			gradB := ReduceSumTo(b.Device, out.Grad, out.Shape, b.Shape)
+			gradB := ReduceSumTo(b.Device, out.Grad(), out.Shape, b.Shape)
 			b.AccumulateGrad(gradB)
 			b.Device.Free(gradB)
 		}
@@ -75,15 +78,15 @@ func (a *Tensor) Sub(b *Tensor) *Tensor {
 
 	out.Backward = func() {
 		if sameShape(out.Shape, a.Shape) {
-			a.AccumulateGrad(out.Grad)
+			a.AccumulateGrad(out.Grad())
 		} else {
-			gradA := ReduceSumTo(a.Device, out.Grad, out.Shape, a.Shape)
+			gradA := ReduceSumTo(a.Device, out.Grad(), out.Shape, a.Shape)
 			a.AccumulateGrad(gradA)
 			a.Device.Free(gradA)
 		}
 
 		// gradB = -1 * out.Grad
-		negGrad := a.Device.MulScalar(out.Grad, -1.0, len(out.Grad))
+		negGrad := a.Device.MulScalar(out.Grad(), -1.0, len(out.Grad()))
 		if sameShape(out.Shape, b.Shape) {
 			b.AccumulateGrad(negGrad)
 			b.Device.Free(negGrad)
@@ -106,7 +109,7 @@ func (a *Tensor) Mul(b *Tensor) *Tensor {
 	out.Backward = func() {
 		// Grad A = out.Grad * B
 		bContig := Contiguous(b)
-		tempA := a.Device.BroadcastMul(out.Grad, bContig.Data, out.Shape, bContig.Shape, out.Shape)
+		tempA := a.Device.BroadcastMul(out.Grad(), bContig.Data(), out.Shape, bContig.Shape, out.Shape)
 		if sameShape(out.Shape, a.Shape) {
 			a.AccumulateGrad(tempA)
 		} else {
@@ -118,7 +121,7 @@ func (a *Tensor) Mul(b *Tensor) *Tensor {
 
 		// Grad B = out.Grad * A
 		aContig := Contiguous(a)
-		tempB := b.Device.BroadcastMul(out.Grad, aContig.Data, out.Shape, aContig.Shape, out.Shape)
+		tempB := b.Device.BroadcastMul(out.Grad(), aContig.Data(), out.Shape, aContig.Shape, out.Shape)
 		if sameShape(out.Shape, b.Shape) {
 			b.AccumulateGrad(tempB)
 		} else {
@@ -128,10 +131,10 @@ func (a *Tensor) Mul(b *Tensor) *Tensor {
 		}
 		b.Device.Free(tempB)
 		if bContig != b {
-			b.Device.Free(bContig.Data)
+			b.Device.Free(bContig.Data())
 		}
 		if aContig != a {
-			a.Device.Free(aContig.Data)
+			a.Device.Free(aContig.Data())
 		}
 	}
 	return out
@@ -148,7 +151,7 @@ func (a *Tensor) Div(b *Tensor) *Tensor {
 
 		// Grad A = out.Grad / B
 		tempA := BroadcastDivOp(gradTensor, b)
-		gradA := ReduceSumTo(a.Device, tempA.Data, tempA.Shape, a.Shape)
+		gradA := ReduceSumTo(a.Device, tempA.Data(), tempA.Shape, a.Shape)
 		a.AccumulateGrad(gradA)
 
 		// Grad B = - (out.Grad * A) / (B * B)
@@ -156,7 +159,7 @@ func (a *Tensor) Div(b *Tensor) *Tensor {
 		temp = BroadcastDivOp(temp, b)
 		temp = BroadcastDivOp(temp, b)
 
-		negData := a.Device.MulScalar(temp.Data, -1.0, len(temp.Data))
+		negData := a.Device.MulScalar(temp.Data(), -1.0, len(temp.Data()))
 		gradB := ReduceSumTo(b.Device, negData, temp.Shape, b.Shape)
 		b.AccumulateGrad(gradB)
 	}
@@ -176,7 +179,7 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 
 	// creating output tensor
 	out := &Tensor{
-		Data:         a.Device.Allocate(m * n),
+		data:         StorageFrom(a.Device.Allocate(m * n)),
 		Shape:        []int{m, n},
 		Strides:      []int{n, 1},
 		Device:       a.Device,
@@ -185,20 +188,59 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 		contiguous:   true,
 	}
 
-	a.Device.MatMul(a.Data, b.Data, out.Data, m, n, k, a.Strides[0], b.Strides[0])
+	aOp, releaseA, err := a.asMatOperand()
+	if err != nil {
+		panic(fmt.Sprintf("MatMul: operand A: %v", err))
+	}
+	defer releaseA()
 
+	bOp, releaseB, err := b.asMatOperand()
+	if err != nil {
+		panic(fmt.Sprintf("MatMul: operand B: %v", err))
+	}
+	defer releaseB()
+
+	a.Device.MatMul(aOp, bOp, out.Data(), 1.0, 0.0)
+
+	// aOp/bOp are released when this function returns, so the closure below must
+	// describe a and b again rather than capturing them — a captured operand that
+	// took the materializing branch would be a use-after-free by the time
+	// BackProp runs.
 	out.Backward = func() {
-		// gradA = gradOut @ b^T
-		gradA := out.Device.Allocate(len(a.Data))
-		out.Device.MatMulTransB(out.Grad, b.Data, gradA, m, k, n, out.Strides[0], b.Strides[0])
-		a.AccumulateGrad(gradA)
-		out.Device.Free(gradA)
+		if out.grad == nil {
+			return
+		}
+		// out is freshly allocated and contiguous, and a gradient is always
+		// stored contiguously in logical order.
+		gradOut := backend.MatOperand{Data: out.Grad(), Rows: m, Cols: n, LD: n}
 
-		// gradB = a^T @ gradOut
-		gradB := out.Device.Allocate(len(b.Data))
-		out.Device.MatMulTransA(a.Data, out.Grad, gradB, k, n, m, a.Strides[0], out.Strides[0])
-		b.AccumulateGrad(gradB)
-		out.Device.Free(gradB)
+		if a.RequiresGrad {
+			bOp, release, err := b.asMatOperand()
+			if err != nil {
+				panic(fmt.Sprintf("MatMul backward: operand B: %v", err))
+			}
+			defer release()
+
+			// gradA = gradOut @ b^T  ->  (m, k)
+			gradA := out.Device.Allocate(m * k)
+			out.Device.MatMul(gradOut, bOp.T(), gradA, 1.0, 0.0)
+			a.AccumulateGrad(gradA)
+			out.Device.Free(gradA)
+		}
+
+		if b.RequiresGrad {
+			aOp, release, err := a.asMatOperand()
+			if err != nil {
+				panic(fmt.Sprintf("MatMul backward: operand A: %v", err))
+			}
+			defer release()
+
+			// gradB = a^T @ gradOut  ->  (k, n)
+			gradB := out.Device.Allocate(k * n)
+			out.Device.MatMul(aOp.T(), gradOut, gradB, 1.0, 0.0)
+			b.AccumulateGrad(gradB)
+			out.Device.Free(gradB)
+		}
 	}
 
 	return out
@@ -217,12 +259,27 @@ func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
 
 	// creating output tensor
 	outData := t.Device.Allocate(m * n)
+
 	// out = t @ b
-	t.Device.MatMul(t.Data, b.Data, outData, m, n, k, t.Strides[0], b.Strides[0])
+	func() {
+		tOp, releaseT, err := t.asMatOperand()
+		if err != nil {
+			panic(fmt.Sprintf("MatMulAddBias: operand A: %v", err))
+		}
+		defer releaseT()
+
+		bOp, releaseB, err := b.asMatOperand()
+		if err != nil {
+			panic(fmt.Sprintf("MatMulAddBias: operand B: %v", err))
+		}
+		defer releaseB()
+
+		t.Device.MatMul(tOp, bOp, outData, 1.0, 0.0)
+	}()
 
 	// Create tensor from matmul result
 	matmulOut := &Tensor{
-		Data:         outData,
+		data:         StorageFrom(outData),
 		Shape:        []int{m, n},
 		Strides:      []int{n, 1},
 		Device:       t.Device,
@@ -232,17 +289,38 @@ func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
 	}
 
 	matmulOut.Backward = func() {
-		// gradT = gradMatMul @ b^T
-		gradT := matmulOut.Device.Allocate(len(t.Data))
-		matmulOut.Device.MatMulTransB(matmulOut.Grad, b.Data, gradT, m, k, n, matmulOut.Strides[0], b.Strides[0])
-		t.AccumulateGrad(gradT)
-		matmulOut.Device.Free(gradT)
+		if matmulOut.grad == nil {
+			return
+		}
+		gradOut := backend.MatOperand{Data: matmulOut.Grad(), Rows: m, Cols: n, LD: n}
 
-		// gradB = t^T @ gradMatMul
-		gradB := matmulOut.Device.Allocate(len(b.Data))
-		matmulOut.Device.MatMulTransA(t.Data, matmulOut.Grad, gradB, k, n, m, t.Strides[0], matmulOut.Strides[0])
-		b.AccumulateGrad(gradB)
-		matmulOut.Device.Free(gradB)
+		if t.RequiresGrad {
+			bOp, release, err := b.asMatOperand()
+			if err != nil {
+				panic(fmt.Sprintf("MatMulAddBias backward: operand B: %v", err))
+			}
+			defer release()
+
+			// gradT = gradMatMul @ b^T  ->  (m, k)
+			gradT := matmulOut.Device.Allocate(m * k)
+			matmulOut.Device.MatMul(gradOut, bOp.T(), gradT, 1.0, 0.0)
+			t.AccumulateGrad(gradT)
+			matmulOut.Device.Free(gradT)
+		}
+
+		if b.RequiresGrad {
+			tOp, release, err := t.asMatOperand()
+			if err != nil {
+				panic(fmt.Sprintf("MatMulAddBias backward: operand A: %v", err))
+			}
+			defer release()
+
+			// gradB = t^T @ gradMatMul  ->  (k, n)
+			gradB := matmulOut.Device.Allocate(k * n)
+			matmulOut.Device.MatMul(tOp.T(), gradOut, gradB, 1.0, 0.0)
+			b.AccumulateGrad(gradB)
+			matmulOut.Device.Free(gradB)
+		}
 	}
 
 	// Add bias using tensor operation (works for both CPU and GPU)
@@ -258,14 +336,12 @@ func (a *Tensor) MatVecMul(b *Tensor) *Tensor {
 		panic("Incompatible shapes for matrix-vector multiplication")
 	}
 
-	// Treat vector as (n, 1) matrix
-	b2D := &Tensor{
-		Data:         b.Data,
-		Shape:        []int{b.Shape[0], 1},
-		Strides:      []int{1, 1},
-		Device:       b.Device,
-		RequiresGrad: b.RequiresGrad,
-	}
+	// Treat the vector as an (n, 1) matrix. This must go through Reshape rather
+	// than a hand-built &Tensor{}: a literal has no Parents and no Backward, so
+	// MatMul's backward would accumulate into a buffer nobody reads and b would
+	// silently never train.
+	b2D := b.Reshape([]int{b.Shape[0], 1})
+
 	res := a.MatMul(b2D)
 	// Flatten result back to 1D
 	return res.Reshape([]int{a.Shape[0]})
@@ -280,14 +356,10 @@ func (a *Tensor) VecMatMul(b *Tensor) *Tensor {
 		panic("Incompatible shapes for vector-matrix multiplication")
 	}
 
-	// Treat vector as (1, m) matrix
-	a2D := &Tensor{
-		Data:         a.Data,
-		Shape:        []int{1, a.Shape[0]},
-		Strides:      []int{a.Shape[0], 1},
-		Device:       a.Device,
-		RequiresGrad: a.RequiresGrad,
-	}
+	// Treat the vector as a (1, m) matrix. See MatVecMul: this must be a Reshape,
+	// not a literal, or a's gradient is silently discarded.
+	a2D := a.Reshape([]int{1, a.Shape[0]})
+
 	res := a2D.MatMul(b)
 	// Flatten result back to 1D
 	return res.Reshape([]int{b.Shape[1]})
@@ -305,8 +377,8 @@ func (a *Tensor) Inverse() *Tensor {
 	}
 
 	aContig := Contiguous(a)
-	aContigF64 := make([]float64, len(aContig.Data))
-	for i, v := range aContig.Data {
+	aContigF64 := make([]float64, len(aContig.Data()))
+	for i, v := range aContig.Data() {
 		aContigF64[i] = float64(v)
 	}
 	mA := mat.NewDense(aContig.Shape[0], aContig.Shape[1], aContigF64)
@@ -342,8 +414,10 @@ func (a *Tensor) Inverse() *Tensor {
 		finalGrad := mat.NewDense(out.Shape[0], out.Shape[1], finalGradData)
 		finalGrad.Mul(tmp, mY.T())
 
+		a.ensureGrad()
+		ag := a.Grad()
 		for i, val := range finalGrad.RawMatrix().Data {
-			a.Grad[i] -= float32(val) // Note the subtraction (negative sign in formula)
+			ag[i] -= float32(val) // Note the subtraction (negative sign in formula)
 		}
 	}
 	return out
@@ -404,7 +478,7 @@ func (t *Tensor) Slice(starts, ends []int) *Tensor {
 	}
 
 	out := &Tensor{
-		Data:         t.Data[offset:], // view starts at offset
+		data:         StorageFrom(t.Data()[offset:]), // view starts at offset
 		Shape:        newShape,
 		Strides:      strides,
 		Device:       t.Device,
@@ -415,16 +489,17 @@ func (t *Tensor) Slice(starts, ends []int) *Tensor {
 
 	out.Backward = func() {
 		// Nothing to propagate if no gradient is present.
-		if len(out.Grad) == 0 {
+		if out.grad == nil || out.grad.Length() == 0 {
 			return
 		}
+		og := out.Grad()
 
 		// Build a full-sized gradient for the parent and place the sliced gradient into it.
-		parentGrad := pools.GetBuffer(len(t.Data))
+		parentGrad := pools.GetBuffer(len(t.Data()))
 
 		// Fast path for scalar-like result (0-d or all dims size 1).
-		if len(out.Shape) == 0 || len(out.Grad) == 1 && product(out.Shape) == 1 {
-			parentGrad[offset] += out.Grad[0]
+		if len(out.Shape) == 0 || len(og) == 1 && product(out.Shape) == 1 {
+			parentGrad[offset] += og[0]
 			t.AccumulateGrad(parentGrad)
 			pools.PutBuffer(parentGrad)
 			return
@@ -432,7 +507,7 @@ func (t *Tensor) Slice(starts, ends []int) *Tensor {
 
 		// Iterate over coordinates in the output tensor and map them back to parent indices.
 		indices := make([]int, len(out.Shape))
-		for _, v := range out.Grad {
+		for _, v := range og {
 			// compute parent flat index
 			pIdx := offset
 			for d := range indices {
@@ -467,4 +542,70 @@ func product(s []int) int {
 		prod *= v
 	}
 	return prod
+}
+
+// asMatOperand describes t as a 2-D BLAS operand, materializing a contiguous
+// copy only when t's strides cannot be expressed as (LD, Trans).
+//
+// The returned release func is always non-nil, including on the error path, so
+// `defer release()` is safe to write unconditionally. It frees the copy if one
+// was made and is a no-op otherwise.
+func (t *Tensor) asMatOperand() (backend.MatOperand, func(), error) {
+	noop := func() {}
+
+	if len(t.Shape) != 2 {
+		return backend.MatOperand{}, noop,
+			fmt.Errorf("asMatOperand: expected a 2D tensor, got shape %v", t.Shape)
+	}
+
+	rows, cols := t.Shape[0], t.Shape[1]
+	rowStride, colStride := t.Strides[0], t.Strides[1]
+
+	// Row-major: columns are adjacent, and rows cannot overlap.
+	if colStride == 1 && rowStride >= max(1, cols) {
+		return backend.MatOperand{
+			Data:  t.Data(),
+			Rows:  rows,
+			Cols:  cols,
+			LD:    rowStride,
+			Trans: false,
+		}, noop, nil
+	}
+
+	// Column-major: the stored bytes are a (cols, rows) row-major matrix with
+	// leading dimension colStride — exactly what a 2-D transpose produces.
+	if rowStride == 1 && colStride >= max(1, rows) {
+		return backend.MatOperand{
+			Data:  t.Data(),
+			Rows:  rows,
+			Cols:  cols,
+			LD:    colStride,
+			Trans: true,
+		}, noop, nil
+	}
+
+	// Neither layout is addressable by BLAS (e.g. a broadcast view, whose stride
+	// is 0 along the broadcast axis): materialize a contiguous copy.
+	//
+	// Deliberately not via tensor.Contiguous: that returns t unchanged whenever
+	// the manually-maintained `contiguous` flag is set, and several view
+	// constructors never set it correctly. It also builds a graph node with no
+	// Backward, which we have no use for — gradients flow through MatMul's own
+	// backward, not through this copy.
+	buf := t.Device.Allocate(rows * cols)
+
+	// Offset is passed as 0, not t.Offset: today Slice reslices storage to
+	// [offset:] *and* sets Offset, so t.Data() already begins at the logical
+	// origin and passing t.Offset again would double-apply it. When P1 fixes
+	// Slice to carry Offset without reslicing, this becomes t.Offset and the
+	// two t.Data() calls above become t.Data()[t.Offset:].
+	t.Device.Contiguous(t.Data(), buf, t.Shape, t.Strides, 0)
+
+	return backend.MatOperand{
+		Data:  buf,
+		Rows:  rows,
+		Cols:  cols,
+		LD:    cols,
+		Trans: false,
+	}, func() { t.Device.Free(buf) }, nil
 }

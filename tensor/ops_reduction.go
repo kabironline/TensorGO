@@ -6,7 +6,7 @@ import "github.com/kabironline/nanograd/backend"
 func (t *Tensor) Sum() *Tensor {
 	// Use Contiguous to handle views correctly
 	tContig := Contiguous(t)
-	total := t.Device.Sum(tContig.Data, len(tContig.Data))
+	total := t.Device.Sum(tContig.Data(), len(tContig.Data()))
 
 	out := NewTensor([]float32{total}, []int{1}, t)
 	// --- Backward function ---
@@ -17,11 +17,11 @@ func (t *Tensor) Sum() *Tensor {
 		var gradOut float32
 		if out.Device.IsGPU() {
 			if memTransfer, ok := out.Device.(backend.MemoryTransfer); ok {
-				gradCPU := memTransfer.ToCPU(out.Grad)
+				gradCPU := memTransfer.ToCPU(out.Grad())
 				gradOut = gradCPU[0]
 			}
 		} else {
-			gradOut = out.Grad[0]
+			gradOut = out.Grad()[0]
 		}
 
 		// Create a gradient tensor full of gradOut using backend Fill operation
@@ -37,7 +37,7 @@ func (t *Tensor) Sum() *Tensor {
 // Mean returns a new Tensor which is the mean of all elements in the original tensor.
 func (t *Tensor) Mean() *Tensor {
 	tContig := Contiguous(t)
-	mean := t.Device.Mean(tContig.Data, len(tContig.Data))
+	mean := t.Device.Mean(tContig.Data(), len(tContig.Data()))
 
 	out := NewTensor([]float32{mean}, []int{1}, t)
 	// --- Backward function ---
@@ -48,11 +48,11 @@ func (t *Tensor) Mean() *Tensor {
 		var gradOut float32
 		if out.Device.IsGPU() {
 			if memTransfer, ok := out.Device.(backend.MemoryTransfer); ok {
-				gradCPU := memTransfer.ToCPU(out.Grad)
+				gradCPU := memTransfer.ToCPU(out.Grad())
 				gradOut = gradCPU[0]
 			}
 		} else {
-			gradOut = out.Grad[0]
+			gradOut = out.Grad()[0]
 		}
 
 		gradPerElement := gradOut / float32(TotalSize(t.Shape))

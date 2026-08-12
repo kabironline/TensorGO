@@ -26,12 +26,10 @@ func BenchmarkMatMulCPU(b *testing.B) {
 	// Warmup
 	for range [10]struct{}{} {
 		cpu.MatMul(
-			h_a,
-			h_b,
+			backend.MatOperand{Data: h_a, Rows: m, Cols: k, LD: k},
+			backend.MatOperand{Data: h_b, Rows: k, Cols: n, LD: n},
 			h_c,
-			m, n, k,
-			// stride a, b
-			k, n,
+			1.0, 0.0,
 		)
 	}
 
@@ -40,12 +38,10 @@ func BenchmarkMatMulCPU(b *testing.B) {
 
 	for b.Loop() {
 		cpu.MatMul(
-			h_a,
-			h_b,
+			backend.MatOperand{Data: h_a, Rows: m, Cols: k, LD: k},
+			backend.MatOperand{Data: h_b, Rows: k, Cols: n, LD: n},
 			h_c,
-			m, n, k,
-			// stride a, b
-			k, n,
+			1.0, 0.0,
 		)
 	}
 }

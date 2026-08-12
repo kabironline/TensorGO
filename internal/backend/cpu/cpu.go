@@ -4,6 +4,7 @@ import (
 	"runtime"
 
 	"github.com/kabironline/nanograd/backend"
+	"github.com/kabironline/nanograd/storage"
 )
 
 // CPUBackend implements the Backend interface for CPU computations.
@@ -55,6 +56,27 @@ func (b *CPUBackend) Free(data []float32) {
 // Copy performs a device-to-device copy on CPU.
 func (b *CPUBackend) Copy(dst, src []float32) {
 	copy(dst, src)
+}
+
+// ============================================================================
+// Storage Management (Storage-typed successor to MemoryManager)
+// ============================================================================
+
+// AllocStorage allocates numel elements of dtype dt as a GC-owned host buffer.
+func (b *CPUBackend) AllocStorage(numel int, dt storage.DType) *storage.Storage {
+	return storage.New(storage.NewHost(make([]byte, numel*dt.Size())), dt, numel)
+}
+
+// FreeStorage is a no-op on CPU (the GC reclaims host memory).
+func (b *CPUBackend) FreeStorage(s *storage.Storage) {
+	if s != nil {
+		s.Free()
+	}
+}
+
+// CopyStorage copies src's bytes into dst on the CPU.
+func (b *CPUBackend) CopyStorage(dst, src *storage.Storage) {
+	copy(dst.Bytes(), src.Bytes())
 }
 
 // ============================================================================

@@ -68,12 +68,12 @@ func (c *Conv2D) Forward(x *tensor.Tensor) *tensor.Tensor {
 
 	var biasData []float32
 	if bContig != nil {
-		biasData = bContig.Data
+		biasData = bContig.Data()
 	}
 
 	outData := x.Device.Conv2DForward(
-		xContig.Data,
-		wContig.Data,
+		xContig.Data(),
+		wContig.Data(),
 		biasData,
 		x.Shape[0], x.Shape[1], x.Shape[2], x.Shape[3],
 		outC, kH, kW,
@@ -90,23 +90,20 @@ func (c *Conv2D) Forward(x *tensor.Tensor) *tensor.Tensor {
 		parents = append(parents, c.Bias)
 	}
 
-	out := &tensor.Tensor{
-		Data:         outData,
-		Shape:        outShape,
-		Strides:      tensor.ComputeStrides(outShape),
-		Device:       x.Device,
-		RequiresGrad: x.RequiresGrad || c.Kernel.RequiresGrad || (c.Bias != nil && c.Bias.RequiresGrad),
-		Parents:      parents,
-	}
+	out := tensor.FromData(
+		outData, outShape, x.Device,
+		x.RequiresGrad || c.Kernel.RequiresGrad || (c.Bias != nil && c.Bias.RequiresGrad),
+		parents...,
+	)
 
 	out.Backward = func() {
-		if out.Grad == nil {
+		if out.Grad() == nil {
 			return
 		}
 		inputGrad, weightGrad, biasGrad := x.Device.Conv2DBackward(
-			xContig.Data,
-			wContig.Data,
-			out.Grad,
+			xContig.Data(),
+			wContig.Data(),
+			out.Grad(),
 			x.Shape[0], x.Shape[1], x.Shape[2], x.Shape[3],
 			outC, kH, kW,
 			padding, padding,
@@ -135,7 +132,7 @@ func (c *Conv2D) Save(layerIdx int, out map[string]safetensors.TensorView) error
 	// Kernel
 	k := c.Kernel
 	dataK := make([]byte, 0, tensor.TotalSize(k.Shape)*4)
-	for _, v := range k.Data {
+	for _, v := range k.Data() {
 		dataK = binary.LittleEndian.AppendUint32(dataK, math.Float32bits(float32(v)))
 	}
 	shapeK := make([]uint64, len(k.Shape))
@@ -151,7 +148,7 @@ func (c *Conv2D) Save(layerIdx int, out map[string]safetensors.TensorView) error
 	// Bias
 	b := c.Bias
 	dataB := make([]byte, 0, tensor.TotalSize(b.Shape)*4)
-	for _, v := range b.Data {
+	for _, v := range b.Data() {
 		dataB = binary.LittleEndian.AppendUint32(dataB, math.Float32bits(float32(v)))
 	}
 	shapeB := make([]uint64, len(b.Shape))

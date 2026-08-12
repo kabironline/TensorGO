@@ -29,11 +29,11 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 	}
 
 	out := &Tensor{
-		Data:         t.Data,
+		data:         t.data, // view: shares the parent's storage
 		Shape:        newShape,
 		Strides:      newStrides,
 		Offset:       t.Offset,
-		Grad:         nil,
+		grad:         nil,
 		Parents:      []*Tensor{t},
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
@@ -41,12 +41,12 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 
 	out.Backward = func() {
 		// Nothing to do if no gradient was produced for the output.
-		if out.Grad == nil {
+		if out.grad == nil {
 			return
 		}
 
 		// Ensure parent has a gradient buffer to accumulate into.
-		if t.Grad == nil {
+		if t.grad == nil {
 			t.AllocGrad()
 		}
 
@@ -71,12 +71,14 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 			}
 		}
 		if isIdentity {
-			t.AccumulateGrad(out.Grad)
+			t.AccumulateGrad(out.Grad())
 			return
 		}
 
 		// Generic path: iterate logical coordinates of the output once and map
 		// them to the parent's physical indices.
+		tg := t.Grad()
+		og := out.Grad()
 		coords := make([]int, len(out.Shape))
 		for i := 0; i < total; i++ {
 			idx := i
@@ -89,7 +91,7 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 			for k := 0; k < len(coords); k++ {
 				tIdx += coords[inv[k]] * t.Strides[k]
 			}
-			t.Grad[tIdx] += out.Grad[i]
+			tg[tIdx] += og[i]
 		}
 	}
 
@@ -129,12 +131,12 @@ func (t *Tensor) Reshape(newShape []int) *Tensor {
 	}
 
 	out := &Tensor{
-		Data:    t.Data,
+		data:    t.data, // view: shares the parent's storage
 		Shape:   actualShape,
 		Strides: ComputeStrides(actualShape),
 		Offset:  t.Offset,
 		// Grad allocated lazily
-		Grad:         nil,
+		grad:         nil,
 		Parents:      []*Tensor{t},
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
@@ -142,12 +144,12 @@ func (t *Tensor) Reshape(newShape []int) *Tensor {
 
 	if t.RequiresGrad {
 		out.Backward = func() {
-			if out.Grad == nil {
+			if out.grad == nil {
 				return
 			}
 			// Gradient of reshape is just reshape back to original shape
 			// and accumulate. Since Data is shared, we just pass the buffer.
-			t.AccumulateGrad(out.Grad)
+			t.AccumulateGrad(out.Grad())
 		}
 	}
 

@@ -137,6 +137,7 @@ func (b *CUDABackend) Copy(dst, src []float32) {
 }
 
 func (b *CUDABackend) Sync() {
-	// Stream sync is sufficient since all backend work is enqueued on b.stream.
-	C.cudaStreamSynchronize(C.cudaStream_t(b.stream))
+	if res := C.cudaStreamSynchronize(C.cudaStream_t(b.stream)); res != C.cudaSuccess {
+		panic(fmt.Sprintf("Sync failed: %v", res))
+	}
 }

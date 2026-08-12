@@ -32,7 +32,7 @@ func TestCudaMatMul(t *testing.T) {
 	cu.Sync()
 
 	// Validate on CPU to avoid huge managed-memory page migrations.
-	cHost := cu.ToCPU(c.Data)
+	cHost := cu.ToCPU(c.Data())
 	// spot-check diagonal
 	step := size / 8
 	if step == 0 {
@@ -76,11 +76,10 @@ func BenchmarkCudaMatMul(b *testing.B) {
 	// Warmup
 	for i := 0; i < 10; i++ {
 		cu.MatMul(
-			d_a,
-			d_b,
+			backend.MatOperand{Data: d_a, Rows: m, Cols: k, LD: k},
+			backend.MatOperand{Data: d_b, Rows: k, Cols: n, LD: n},
 			d_c,
-			m, n, k,
-			k, n,
+			1.0, 0.0,
 		)
 	}
 	cu.Sync()
@@ -91,11 +90,10 @@ func BenchmarkCudaMatMul(b *testing.B) {
 	// Benchmark (sync periodically to avoid unbounded queue growth)
 	for i := 0; i < b.N; i++ {
 		cu.MatMul(
-			d_a,
-			d_b,
+			backend.MatOperand{Data: d_a, Rows: m, Cols: k, LD: k},
+			backend.MatOperand{Data: d_b, Rows: k, Cols: n, LD: n},
 			d_c,
-			m, n, k,
-			k, n,
+			1.0, 0.0,
 		)
 		if i%10 == 0 {
 			cu.Sync()
@@ -138,7 +136,11 @@ func TestCudaMatMulTransA(t *testing.T) {
 	// Manually call MatMulTransA through the backend
 	m, k, n := 2, 3, 2 // Result is [2×2], A^T is [2×3], B is [3×2]
 	result := cu.Allocate(m * n)
-	cu.MatMulTransA(a.Data, b.Data, result, m, n, k, a.Strides[0], b.Strides[0])
+	cu.MatMul(
+		backend.MatOperand{Data: a.Data(), Rows: k, Cols: m, LD: m}.T(),
+		backend.MatOperand{Data: b.Data(), Rows: k, Cols: n, LD: n},
+		result, 1.0, 0.0,
+	)
 	cu.Sync()
 
 	result_cpu := cu.ToCPU(result)
@@ -177,7 +179,11 @@ func TestCudaMatMulTransB(t *testing.T) {
 	// Manually call MatMulTransB through the backend
 	m, k, n := 2, 3, 2 // Result is [2×2], A is [2×3], B^T is [3×2]
 	result := cu.Allocate(m * n)
-	cu.MatMulTransB(a.Data, b.Data, result, m, n, k, a.Strides[0], b.Strides[0])
+	cu.MatMul(
+		backend.MatOperand{Data: a.Data(), Rows: m, Cols: k, LD: k},
+		backend.MatOperand{Data: b.Data(), Rows: n, Cols: k, LD: k}.T(),
+		result, 1.0, 0.0,
+	)
 	cu.Sync()
 
 	result_cpu := cu.ToCPU(result)
@@ -222,7 +228,11 @@ func TestCudaMatMulTransA_NonSquare(t *testing.T) {
 	b := tensor.NewTensor(b_data, []int{k, n})
 
 	result := cu.Allocate(m * n)
-	cu.MatMulTransA(a.Data, b.Data, result, m, n, k, a.Strides[0], b.Strides[0])
+	cu.MatMul(
+		backend.MatOperand{Data: a.Data(), Rows: k, Cols: m, LD: m}.T(),
+		backend.MatOperand{Data: b.Data(), Rows: k, Cols: n, LD: n},
+		result, 1.0, 0.0,
+	)
 	cu.Sync()
 
 	result_cpu := cu.ToCPU(result)
@@ -271,7 +281,11 @@ func TestCudaMatMulTransB_LargerMatrix(t *testing.T) {
 	b := tensor.NewTensor(b_data, []int{n, k})
 
 	result := cu.Allocate(m * n)
-	cu.MatMulTransB(a.Data, b.Data, result, m, n, k, a.Strides[0], b.Strides[0])
+	cu.MatMul(
+		backend.MatOperand{Data: a.Data(), Rows: m, Cols: k, LD: k},
+		backend.MatOperand{Data: b.Data(), Rows: n, Cols: k, LD: k}.T(),
+		result, 1.0, 0.0,
+	)
 	cu.Sync()
 
 	result_cpu := cu.ToCPU(result)

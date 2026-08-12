@@ -1,5 +1,7 @@
 package cpu
 
+import "github.com/kabironline/nanograd/backend"
+
 func contiguousStrides4D(n, c, h, w int) []int {
 	return []int{c * h * w, h * w, w, 1}
 }
@@ -121,7 +123,12 @@ func (b *CPUBackend) Conv2DForward(
 	cols := im2colCPU(b, input, []int{batchSize, inChannels, inHeight, inWidth}, strides, kernelHeight, kernelWidth, strideHeight, padHeight)
 
 	matOut := b.Allocate(outChannels * rowSize)
-	b.MatMul(weights, cols, matOut, outChannels, rowSize, k, k, rowSize)
+	// matOut = weights (outChannels, k) @ cols (k, rowSize)
+	b.MatMul(
+		backend.MatOperand{Data: weights, Rows: outChannels, Cols: k, LD: k},
+		backend.MatOperand{Data: cols, Rows: k, Cols: rowSize, LD: rowSize},
+		matOut, 1.0, 0.0,
+	)
 
 	out := b.Allocate(batchSize * outChannels * outH * outW)
 	useBias := len(bias) == outChannels
@@ -198,10 +205,20 @@ func (b *CPUBackend) Conv2DBackward(
 	})
 
 	weightsGrad = b.Allocate(outChannels * k)
-	b.MatMulTransB(gradMat, cols, weightsGrad, outChannels, k, rowSize, rowSize, rowSize)
+	// weightsGrad = gradMat (outChannels, rowSize) @ cols^T (rowSize, k)
+	b.MatMul(
+		backend.MatOperand{Data: gradMat, Rows: outChannels, Cols: rowSize, LD: rowSize},
+		backend.MatOperand{Data: cols, Rows: k, Cols: rowSize, LD: rowSize}.T(),
+		weightsGrad, 1.0, 0.0,
+	)
 
 	colGrad := b.Allocate(k * rowSize)
-	b.MatMulTransA(weights, gradMat, colGrad, k, rowSize, outChannels, k, rowSize)
+	// colGrad = weights^T (k, outChannels) @ gradMat (outChannels, rowSize)
+	b.MatMul(
+		backend.MatOperand{Data: weights, Rows: outChannels, Cols: k, LD: k}.T(),
+		backend.MatOperand{Data: gradMat, Rows: outChannels, Cols: rowSize, LD: rowSize},
+		colGrad, 1.0, 0.0,
+	)
 	inputGrad = col2imCPU(b, colGrad, []int{batchSize, inChannels, inHeight, inWidth}, kernelHeight, kernelWidth, strideHeight, padHeight)
 
 	biasGrad = b.Allocate(outChannels)

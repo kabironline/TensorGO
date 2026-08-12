@@ -42,7 +42,7 @@ func TestXOR(t *testing.T) {
 
 		// Loss (MSE)
 		loss := nn.MSELoss(pred, targets)
-		lastLoss = loss.Data[0]
+		lastLoss = loss.Data()[0]
 		// Backward
 		loss.BackProp()
 
@@ -50,7 +50,7 @@ func TestXOR(t *testing.T) {
 		optimizer.Step()
 
 		if epoch%10 == 0 {
-			fmt.Printf("Epoch %d, Loss: %f\n", epoch, loss.Data[0])
+			fmt.Printf("Epoch %d, Loss: %f\n", epoch, loss.Data()[0])
 		}
 	}
 
@@ -71,7 +71,7 @@ func TestXOR(t *testing.T) {
 	assert.NoError(t, err)
 
 	newPred := newModel.Forward(inputs)
-	newLoss := nn.MSELoss(newPred, targets).Data[0]
+	newLoss := nn.MSELoss(newPred, targets).Data()[0]
 
 	// reduced tolerance due to float32 precision instead of float64
 	assert.InDelta(t, lastLoss, newLoss, 1e-3, "Loaded model should produce same loss")

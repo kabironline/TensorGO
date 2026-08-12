@@ -46,7 +46,7 @@ func (l *Linear) Save(layerIdx int, out map[string]safetensors.TensorView) error
 	// Weight
 	w := l.Weight
 	dataW := make([]byte, 0, tensor.TotalSize(w.Shape)*4)
-	for _, v := range w.Data {
+	for _, v := range w.Data() {
 		dataW = binary.LittleEndian.AppendUint32(dataW, math.Float32bits(float32(v)))
 	}
 	shapeW := make([]uint64, len(w.Shape))
@@ -62,7 +62,7 @@ func (l *Linear) Save(layerIdx int, out map[string]safetensors.TensorView) error
 	// Bias
 	b := l.Bias
 	dataB := make([]byte, 0, tensor.TotalSize(b.Shape)*4)
-	for _, v := range b.Data {
+	for _, v := range b.Data() {
 		dataB = binary.LittleEndian.AppendUint32(dataB, math.Float32bits(float32(v)))
 	}
 	shapeB := make([]uint64, len(b.Shape))

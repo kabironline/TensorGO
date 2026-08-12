@@ -32,12 +32,12 @@ func (t *Tensor) getIndex(indices ...int) int {
 
 // At returns the element at the given multi-dimensional indices.
 func (t *Tensor) At(indices ...int) float32 {
-	return t.Data[t.getIndex(indices...)]
+	return t.Data()[t.getIndex(indices...)]
 }
 
 // SetAt sets the value at the given multi-dimensional indices.
 func (t *Tensor) SetAt(val float32, indices ...int) {
-	t.Data[t.getIndex(indices...)] = val
+	t.Data()[t.getIndex(indices...)] = val
 }
 
 // PhysicalIndexFromLinearIndex converts a logical flat index to the physical
@@ -69,13 +69,13 @@ func Contiguous(t *Tensor) *Tensor {
 	// Provide the data starting at the tensor's offset so the backend's mapping
 	// logic can operate as if the logical origin is index 0.
 	// Backends implement Contiguous(dst) by writing into the provided out buffer.
-	t.Device.Contiguous(t.Data, newData, shape, t.Strides, t.Offset)
+	t.Device.Contiguous(t.Data(), newData, shape, t.Strides, t.Offset)
 
 	return &Tensor{
-		Data:         newData,
+		data:         StorageFrom(newData),
 		Shape:        append([]int{}, shape...),
 		Strides:      ComputeStrides(shape),
-		Grad:         nil,
+		grad:         nil,
 		contiguous:   true,
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,

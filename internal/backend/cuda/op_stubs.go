@@ -36,13 +36,10 @@ func (b *CUDABackend) Pow(a []float32, power float32, size int) []float32 {
 }
 
 // Matrix Operations
-// func (b *CUDABackend) MatMul(a, b_val []float32, m, n, k, strideA, strideB int) []float32 { return nil }
-
-func (b *CUDABackend) MatMulAdd(a, b_val, c, out []float32, m, n, k, strideA, strideB int) {
-	// Compute out = a @ b_val, then add c into out (device-side)
-	b.MatMul(a, b_val, out, m, n, k, strideA, strideB)
-	b.Add(out, c, out, m*n)
-}
+//
+// MatMulAdd was removed with the MatOperand migration: accumulation is now
+// expressed by MatMul's beta parameter. The old stub was broken regardless — it
+// forwarded a length-n bias to Add, which requires operands of equal length.
 
 // Reduction Operations
 // Sum, Mean, and SumAxis now have CUDA implementations in ops_reduction.go
