@@ -1,3 +1,5 @@
+//go:build cuda
+
 package nn_test
 
 import (

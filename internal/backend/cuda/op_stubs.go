@@ -1,3 +1,5 @@
+//go:build cuda
+
 package cuda
 
 import (
@@ -240,6 +242,13 @@ func (b *CUDABackend) MaxPool2dBackward(grad []float32, indices []int, xShape []
 }
 
 // Random
+//
+// Random numbers are generated on the host and copied down, so seeding is
+// delegated to the CPU backend that actually produces them.
+func (b *CUDABackend) Seed(seed uint64) {
+	cpuBackend().Seed(seed)
+}
+
 func (b *CUDABackend) Normal(data []float32, mean, stdDev float32, size int) {
 	// Generate random numbers on CPU
 	h := make([]float32, size)

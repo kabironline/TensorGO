@@ -35,3 +35,5 @@ go.work.sum
 
 data/
 *prof
+# compiled CUDA kernel archive (build artifact)
+internal/backend/cuda/kernels/*.a

@@ -13,7 +13,10 @@ import (
 
 func loadMNISTData(t *testing.T) (*GoMNIST.Set, *GoMNIST.Set) {
 	train, test, err := GoMNIST.Load("./data")
-	assert.NoError(t, err)
+	if err != nil {
+		t.Skipf("dataset not available in %s (%v); "+
+			"this canary needs the dataset downloaded locally", "./data", err)
+	}
 	assert.Equal(t, 60000, len(train.Images))
 	assert.Equal(t, 10000, len(test.Images))
 

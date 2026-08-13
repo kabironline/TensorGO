@@ -55,7 +55,7 @@ func (t *Tensor) BackProp() {
 	// Traverse the graph in reverse topological order
 	for i := len(order) - 1; i >= 0; i-- {
 		current := order[i]
-		if current.Backward != nil {
+		if current.Backward != nil && current.Grad() != nil {
 			current.Backward()
 		}
 	}

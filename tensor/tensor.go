@@ -371,6 +371,20 @@ func (t *Tensor) ensureGrad() {
 	}
 }
 
+// ZeroGrad zeroes this tensor's gradient buffer, allocating it first if it does
+// not exist yet. It is a no-op for tensors that do not require gradients.
+//
+// Optimizers zero only the parameters registered with them; use this when you
+// need to reset a specific tensor (e.g. between two independent backward passes
+// over the same leaf, as gradient checking does).
+func (t *Tensor) ZeroGrad() {
+	if !t.RequiresGrad {
+		return
+	}
+	t.ensureGrad()
+	t.Device.Fill(t.Grad(), 0, t.grad.Length())
+}
+
 // AllocGrad ensures the tensor has a gradient buffer allocated. Public helper
 // for packages that create parameters which will always participate in
 // backpropagation (e.g., model weights and biases).

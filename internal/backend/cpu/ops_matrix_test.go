@@ -1,4 +1,4 @@
-package test
+package cpu_test
 
 import (
 	"math/rand"

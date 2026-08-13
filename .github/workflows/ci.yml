@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, engine-rewrite]
+  pull_request:
+
+env:
+  GO_VERSION: "1.24"
+
+jobs:
+  # The library must be usable by people who have no CUDA toolchain at all.
+  # CGO_ENABLED=0 on three OSes is what proves the build tags actually work.
+  build:
+    name: build (${{ matrix.os }}, cgo=${{ matrix.cgo }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        cgo: ["0", "1"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: go build
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: go build ./...
+      - name: tests compile
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: go test -run=NONE -count=1 ./...
+
+  vet:
+    name: vet + gofmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: go vet ./...
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+  test:
+    name: test + race + coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      # -race is what catches the unsynchronised backend registry and the
+      # shared WaitGroup in the CPU worker pool.
+      - name: go test -race
+        run: go test -race -count=1 ./tensor/... ./storage/... ./optim/... ./nn/... ./internal/... ./gradcheck/...
+
+      # Gradient checking is the gate that makes autograd changes safe. It is
+      # called out separately so a failure here is unmistakable in the log.
+      - name: gradient check
+        run: go test -run Gradcheck -count=1 -v ./tensor/
+
+      # A -run pattern that matches nothing exits 0. Assert that tests really ran.
+      - name: assert gradcheck actually executed
+        run: |
+          out="$(go test -run Gradcheck -count=1 -v ./tensor/)"
+          echo "$out"
+          if ! echo "$out" | grep -q -- "--- PASS: TestGradcheck"; then
+            echo "::error::no gradcheck tests executed -- the -run pattern matched nothing"
+            exit 1
+          fi
+
+      - name: coverage
+        run: go test -count=1 -coverprofile=coverage.out ./tensor/... ./storage/... ./optim/... ./internal/backend/cpu/...
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  # The CUDA package cannot be exercised without a GPU runner, but it can still
+  # be type-checked. This is the job that would have caught the cuda/test files
+  # drifting out of sync with the MatOperand refactor.
+  cuda-typecheck:
+    name: cuda typecheck (no GPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: install CUDA headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nvidia-cuda-toolkit
+      - name: vet with cuda tag
+        run: go vet -tags cuda ./... || true
+        # Non-blocking for now: the cgo LDFLAGS still hardcode
+        # /usr/local/cuda/lib64 and /usr/lib/wsl/lib, so linking will not
+        # succeed on a stock runner. Flip to blocking once P0's CUDA_PATH work
+        # lands. Kept in the matrix so the type errors remain visible.
+
+  canary:
+    name: MNIST canary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: cache MNIST
+        uses: actions/cache@v4
+        with:
+          path: example/MNIST/data
+          key: mnist-idx-v1
+      - name: fetch MNIST
+        run: |
+          mkdir -p example/MNIST/data
+          cd example/MNIST/data
+          base="https://storage.googleapis.com/cvdf-datasets/mnist"
+          for f in train-images-idx3-ubyte.gz train-labels-idx1-ubyte.gz \
+                   t10k-images-idx3-ubyte.gz  t10k-labels-idx1-ubyte.gz; do
+            [ -f "$f" ] || curl -fsSL -O "$base/$f"
+          done
+      # ~10s. The MLP canary is the only whole-stack check in the repo, so it
+      # runs on every push. TestMNISTCNN (~100s) is left for pre-release.
+      - name: TestMNIST (>95% accuracy gate)
+        run: go test -run 'TestMNIST$' -v -count=1 -timeout 20m ./example/MNIST/

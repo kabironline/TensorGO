@@ -1,3 +1,5 @@
+//go:build cuda
+
 package cuda
 
 // Phase-2 Storage-typed memory management for the CUDA backend.

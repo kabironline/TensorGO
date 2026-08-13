@@ -30,7 +30,10 @@ func TestMNISTCNN(t *testing.T) {
 	backend.SetDefaultBackend(cpu.NewCPUBackend())
 
 	trainData, testData, err := GoMNIST.Load("./data")
-	assert.NoError(t, err)
+	if err != nil {
+		t.Skipf("dataset not available in %s (%v); "+
+			"this canary needs the dataset downloaded locally", "./data", err)
+	}
 	// Use a subset of training data for faster training
 	numTrainSamples := 50000
 	if numTrainSamples > len(trainData.Images) {

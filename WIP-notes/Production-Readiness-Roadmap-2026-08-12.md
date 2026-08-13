@@ -112,7 +112,7 @@ earlier ones installed.
 
 | Phase | Theme | Why here |
 |---|---|---|
-| **P0** | Build, test infrastructure, CI | Nothing else is verifiable until the code builds and gradients can be checked |
+| **P0** ✅ | Build, test infrastructure, CI | Nothing else is verifiable until the code builds and gradients can be checked |
 | **P1** | Autograd correctness (CPU) | Fix wrong math while the harness can prove it |
 | **P2** | Ownership & lifetime | Now safe: any numeric change is a memory bug, not a math bug |
 | **P3** | Device safety (kill the fake slice) | Needs P2's ownership model to have somewhere to put device handles |
@@ -123,9 +123,37 @@ earlier ones installed.
 
 ---
 
-### P0 — Make it buildable and make correctness observable
+### P0 — Make it buildable and make correctness observable ✅ **DONE 2026-08-13**
 
 **Nothing in this phase changes behavior.** It builds the instruments.
+
+**Completion notes.** All eight items landed. Verified in five configurations:
+`CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go test -run=NONE ./...`,
+`go build -tags cuda ./...`, `go test -tags cuda -run=NONE ./...`, `go vet`,
+`gofmt -l`, and `go test -race`, on both Windows and WSL.
+
+The gradcheck harness found **three** of the predicted P1 bugs on its first run,
+now marked with skips in `tensor/gradcheck_test.go` that name the fix:
+
+| Check | Symptom | Bug |
+|---|---|---|
+| `views/add-on-transposed-view` | analytic grads are a *transposed permutation* of the true ones | `Add` fast path ignores strides |
+| `views/slice` | gradient lands 6 elements past where it belongs | `Slice` applies offset twice |
+| `views/slice-then-transpose` | panic, index out of range | `ensureGrad`/`AllocGrad` size disagreement |
+
+34 of 37 checks pass, including the whole matmul family and every activation.
+
+**Two design lessons worth carrying forward:**
+
+1. **A plain `Sum()` loss cannot detect a permutation bug.** Sum is
+   permutation-invariant, so `d(sum)/dx` is 1 for every element regardless of the
+   order the op emits them in — the `Add`-on-transposed-view bug passed until the
+   harness switched to a *position-weighted* sum (`sum(out * w)`, `w` constant and
+   distinct per position). Any future reduction used as a gradcheck loss must
+   break that symmetry.
+2. **`go test -run <pattern-that-matches-nothing>` exits 0.** The first canary run
+   reported `PASS` having executed zero tests. The CI job asserts that gradchecks
+   actually ran.
 
 1. **Build tags for CUDA.** Split every cgo file with `//go:build cuda` and add a
    `cuda_stub.go` with `//go:build !cuda` providing a `NewCUDABackend` that returns
@@ -417,10 +445,38 @@ go test ./example/MNIST/                         # >95% canary, after P0 fixes i
   ownership in the same phase.
 - **Scope creep at P4.** It's the only phase that breaks API compatibility; batch every
   breaking change into it and cut a `v0.1.0` immediately after.
-- **The MNIST/CIFAR canaries can't run in CI** — `.gitignore` excludes `data/`, and the tests
-  `assert.NoError` on a failed dataset load rather than skipping. They also have no
-  `testing.Short()` guard and take tens of minutes on CPU. Fix the skip behavior in P0 or they
-  will stay dead.
+- **The MNIST/CIFAR canaries can't run in *fresh* CI** — `.gitignore` excludes `data/`, and the
+  tests `assert.NoError` on a failed dataset load rather than skipping. Fix the skip behaviour
+  in P0 (cache the dataset or skip cleanly when absent).
+
+## Canary results — 2026-08-13 (first run since the Storage migration)
+
+Once `example/` compiled again, both MNIST canaries were run. **Both pass, and they are far
+cheaper than this document originally assumed** (it estimated "tens of minutes to hours"):
+
+| Test | Result | Gate | Wall clock |
+|---|---|---|---|
+| `TestMNIST` (MLP) | **95.53%** | >95% | **10.5 s** |
+| `TestMNISTCNN` | **98.70%** | >80% | **98.9 s** |
+
+Consequences for the plan:
+
+1. **Wire `TestMNIST` in as a per-commit regression gate now.** At 10 s it is the cheapest
+   whole-stack check available and currently the only one. `TestMNISTCNN` fits a pre-merge job.
+2. **The MatOperand refactor is validated by a real training run**, not just unit tests —
+   `MatMulAddBias`'s backward routes both gradients through `.T()` operands.
+3. **These paths are now known-good end to end:** Linear, ReLU, Softmax, cross-entropy, Adam,
+   transposed matmul, broadcast-`Add` (bias), Conv2D fwd+bwd, MaxPool2D, Flatten/Reshape.
+4. **Therefore every remaining P1 bug lives in API surface neither canary touches:** `Slice`,
+   `BroadcastTo` views, `Reshape` on non-contiguous input, `Inverse`, `Add`'s stride-ignoring
+   fast path (reachable only with a view operand), and directly-called `Broadcast*Op`.
+   A gradcheck restricted to contiguous inputs would pass today and catch none of them —
+   the {transposed, sliced, offset, broadcast, reshaped} input matrix *is* the deliverable.
+5. Caveat: passing a canary is evidence, not proof. A gradient wrong by a constant factor can
+   still train. Conv/MaxPool backward remain unverified against finite differences.
+
+**Note:** a `-run` pattern that matches nothing exits 0. The first canary attempt reported
+`PASS` having executed zero tests. Any CI gate must assert that tests actually ran.
 
 ## Suggested first commit
 

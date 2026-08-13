@@ -60,6 +60,11 @@ type OptimizerOps interface {
 type RandomOps interface {
 	// Normal fills the buffer with normal distribution values
 	Normal(data []float32, mean, stdDev float32, size int)
+
+	// Seed reseeds this backend's random source so that weight initialisation
+	// is reproducible. Backends must be deterministic given a fixed seed and a
+	// fixed sequence of calls.
+	Seed(seed uint64)
 }
 
 type ConvOps interface {

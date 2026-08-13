@@ -88,7 +88,10 @@ func loadCIFAR10Data(folderPath string) ([]CIFAR10Record, []CIFAR10Record, error
 
 func TestCIFAR10_CNN(t *testing.T) {
 	trainData, testData, err := loadCIFAR10Data("./data")
-	assert.NoError(t, err)
+	if err != nil {
+		t.Skipf("dataset not available in %s (%v); "+
+			"this canary needs the dataset downloaded locally", "./data", err)
+	}
 
 	assert.Equal(t, 50000, len(trainData))
 	assert.Equal(t, 10000, len(testData))
@@ -225,5 +228,7 @@ func TestCIFAR10_CNN(t *testing.T) {
 
 	accuracy := float32(correct) / float32(numTestSamples) * 100
 	fmt.Printf("Test Accuracy: %.2f%%\n", accuracy)
-	assert.Greater(t, accuracy, 20.0, "Accuracy should be at least 20%")
+	// float32 vs an untyped constant (float64): testify's Greater rejects
+	// mismatched types, so this assertion failed regardless of the accuracy.
+	assert.Greater(t, accuracy, float32(20.0), "Accuracy should be at least 20%")
 }
