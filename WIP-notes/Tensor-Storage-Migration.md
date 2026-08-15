@@ -1,6 +1,6 @@
 # How the `Tensor` Evolves: `[]float32` → `Storage`
 
-> Companion to [Engine-Redesign-Roadmap-2026-06-22.md](./Engine-Redesign-Roadmap-2026-06-22.md).
+> Companion to [Engine-Roadmap.md](./Engine-Roadmap.md).
 > This is the concrete "how I update the Tensor" walkthrough. You write the code; this is the design + a fully-worked reference example you replicate across the ~40 ops.
 
 > **STATUS (2026-06-23): this migration is DONE on CPU (F32).** `Tensor.data`/`grad` are now `*Storage`; `tensor/`, `nn/`, and `optim/` are fully migrated via the `Data()`/`Grad()` shims; all CPU tests pass and XOR trains end-to-end. The GPU representation (`DevicePtr`/Phase 2) and the `Scope` (Phase 4) are **not** built yet — the `Storage` shipped is the simple `{ data []byte; dtype; numel }` and the backend is still `[]float32`-typed (bridged by the shims). The sections below describe the full target design; treat the GPU/Scope parts as forward-looking.
