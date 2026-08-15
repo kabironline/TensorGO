@@ -68,20 +68,26 @@ jobs:
       # Gradient checking is the gate that makes autograd changes safe. It is
       # called out separately so a failure here is unmistakable in the log.
       - name: gradient check
-        run: go test -run Gradcheck -count=1 -v ./tensor/
+        run: go test -run Gradcheck -count=1 -v ./tensor/test/
 
       # A -run pattern that matches nothing exits 0. Assert that tests really ran.
       - name: assert gradcheck actually executed
         run: |
-          out="$(go test -run Gradcheck -count=1 -v ./tensor/)"
+          out="$(go test -run Gradcheck -count=1 -v ./tensor/test/)"
           echo "$out"
           if ! echo "$out" | grep -q -- "--- PASS: TestGradcheck"; then
             echo "::error::no gradcheck tests executed -- the -run pattern matched nothing"
             exit 1
           fi
 
+      # Tests live in test/ subpackages, so -coverpkg is required: without it
+      # every package containing logic reports 0.0%.
       - name: coverage
-        run: go test -count=1 -coverprofile=coverage.out ./tensor/... ./storage/... ./optim/... ./internal/backend/cpu/...
+        run: |
+          go test -count=1 \
+            -coverpkg=./tensor/...,./storage/...,./optim/...,./nn/...,./internal/backend/cpu/... \
+            -coverprofile=coverage.out \
+            ./tensor/... ./storage/... ./optim/... ./internal/backend/cpu/...
       - uses: actions/upload-artifact@v4
         with:
           name: coverage
@@ -134,4 +140,4 @@ jobs:
       # ~10s. The MLP canary is the only whole-stack check in the repo, so it
       # runs on every push. TestMNISTCNN (~100s) is left for pre-release.
       - name: TestMNIST (>95% accuracy gate)
-        run: go test -run 'TestMNIST$' -v -count=1 -timeout 20m ./example/MNIST/
+        run: go test -tags examples -run 'TestMNIST$' -v -count=1 -timeout 20m ./example/MNIST/

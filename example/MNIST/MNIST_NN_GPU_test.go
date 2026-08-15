@@ -1,4 +1,4 @@
-//go:build cuda
+//go:build cuda && examples
 
 package mnist
 

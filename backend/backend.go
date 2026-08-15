@@ -32,6 +32,7 @@ type Backend interface {
 	SoftmaxOps
 	BroadcastOps
 	UtilityOps
+	LinAlgOps
 	RandomOps
 	OptimizerOps
 
@@ -288,6 +289,15 @@ type UtilityOps interface {
 
 	// Transpose transposes a 2D matrix
 	Transpose(a []float32, rows, cols int) []float32
+}
+
+// ============================================================================
+// Linear Algebra Operations Interface (Optional)
+// ============================================================================
+
+type LinAlgOps interface {
+	// Inverse computes the inverse of a square matrix
+	Inverse(a []float32, out []float32, n int) error
 }
 
 // ============================================================================

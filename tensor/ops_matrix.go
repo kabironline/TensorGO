@@ -5,7 +5,6 @@ import (
 
 	"github.com/kabironline/nanograd/backend"
 	"github.com/kabironline/nanograd/internal/pools"
-	"gonum.org/v1/gonum/mat"
 )
 
 // Add performs element-wise addition between two tensors.
@@ -328,41 +327,159 @@ func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
 }
 
 // MatVecMul performs matrix-vector multiplication.
-func (a *Tensor) MatVecMul(b *Tensor) *Tensor {
-	if len(a.Shape) != 2 || len(b.Shape) != 1 {
+// vecOperand describes a contiguous 1-D tensor as a matrix operand: a 1 x n row
+// when row is true, an n x 1 column otherwise. No data is copied or moved.
+//
+// asMatOperand deliberately rejects non-2-D tensors, so vectors need this. The
+// unit-stride requirement is checked rather than worked around: no current op
+// produces a strided 1-D tensor, and silently reading one as if it were packed
+// is exactly the class of bug this package has been removing.
+func vecOperand(t *Tensor, row bool) backend.MatOperand {
+	if len(t.Shape) != 1 {
+		panic(fmt.Sprintf("vecOperand: expected a 1D tensor, got shape %v", t.Shape))
+	}
+	if t.Strides[0] != 1 {
+		panic(fmt.Sprintf("vecOperand: expected unit stride, got strides %v", t.Strides))
+	}
+	n := t.Shape[0]
+	if row {
+		return backend.MatOperand{Data: t.Data(), Rows: 1, Cols: n, LD: n}
+	}
+	return backend.MatOperand{Data: t.Data(), Rows: n, Cols: 1, LD: 1}
+}
+
+// MatVecMul computes out = a @ v, where a is (m, n) and v is (n,). The result
+// is (m,).
+//
+// The matrix is treated as (m, n) and the vector as an (n, 1) column, so this is
+// one gemm rather than reshape/matmul/reshape. Gradients are produced here
+// directly, which is why no intermediate view tensors are built.
+func (a *Tensor) MatVecMul(v *Tensor) *Tensor {
+	if len(a.Shape) != 2 || len(v.Shape) != 1 {
 		panic("MatVecMul requires a 2D matrix and a 1D vector")
 	}
-	if a.Shape[1] != b.Shape[0] {
+	if a.Shape[1] != v.Shape[0] {
 		panic("Incompatible shapes for matrix-vector multiplication")
 	}
 
-	// Treat the vector as an (n, 1) matrix. This must go through Reshape rather
-	// than a hand-built &Tensor{}: a literal has no Parents and no Backward, so
-	// MatMul's backward would accumulate into a buffer nobody reads and b would
-	// silently never train.
-	b2D := b.Reshape([]int{b.Shape[0], 1})
+	m, n := a.Shape[0], a.Shape[1]
 
-	res := a.MatMul(b2D)
-	// Flatten result back to 1D
-	return res.Reshape([]int{a.Shape[0]})
+	out := &Tensor{
+		data:         StorageFrom(a.Device.Allocate(m)),
+		Shape:        []int{m},
+		Strides:      []int{1},
+		Device:       a.Device,
+		RequiresGrad: a.RequiresGrad || v.RequiresGrad,
+		Parents:      []*Tensor{a, v},
+		contiguous:   true,
+	}
+
+	// out(m,1) = a(m,n) @ v(n,1)
+	aOp, releaseA, err := a.asMatOperand()
+	if err != nil {
+		panic(fmt.Sprintf("MatVecMul: matrix operand: %v", err))
+	}
+	defer releaseA()
+
+	a.Device.MatMul(aOp, vecOperand(v, false), out.Data(), 1.0, 0.0)
+
+	// aOp is released when this function returns, so the closure describes a
+	// again rather than capturing it.
+	out.Backward = func() {
+		if out.grad == nil {
+			return
+		}
+		// out is contiguous, so its gradient is an (m, 1) column.
+		gradOut := backend.MatOperand{Data: out.Grad(), Rows: m, Cols: 1, LD: 1}
+
+		if a.RequiresGrad {
+			// gradA = gradOut(m,1) @ v^T(1,n)  ->  (m, n)
+			gradA := out.Device.Allocate(m * n)
+			out.Device.MatMul(gradOut, vecOperand(v, false).T(), gradA, 1.0, 0.0)
+			a.AccumulateGrad(gradA)
+			out.Device.Free(gradA)
+		}
+
+		if v.RequiresGrad {
+			aOp, release, err := a.asMatOperand()
+			if err != nil {
+				panic(fmt.Sprintf("MatVecMul backward: matrix operand: %v", err))
+			}
+			defer release()
+
+			// gradV = a^T(n,m) @ gradOut(m,1)  ->  (n, 1)
+			gradV := out.Device.Allocate(n)
+			out.Device.MatMul(aOp.T(), gradOut, gradV, 1.0, 0.0)
+			v.AccumulateGrad(gradV)
+			out.Device.Free(gradV)
+		}
+	}
+
+	return out
 }
 
-// VecMatMul performs vector-matrix multiplication.
-func (a *Tensor) VecMatMul(b *Tensor) *Tensor {
-	if len(a.Shape) != 1 || len(b.Shape) != 2 {
+// VecMatMul computes out = v @ b, where v is (m,) and b is (m, n). The result
+// is (n,). It is the mirror of MatVecMul: the vector becomes a (1, m) row.
+func (v *Tensor) VecMatMul(b *Tensor) *Tensor {
+	if len(v.Shape) != 1 || len(b.Shape) != 2 {
 		panic("VecMatMul requires a 1D vector and a 2D matrix")
 	}
-	if a.Shape[0] != b.Shape[0] {
+	if v.Shape[0] != b.Shape[0] {
 		panic("Incompatible shapes for vector-matrix multiplication")
 	}
 
-	// Treat the vector as a (1, m) matrix. See MatVecMul: this must be a Reshape,
-	// not a literal, or a's gradient is silently discarded.
-	a2D := a.Reshape([]int{1, a.Shape[0]})
+	m, n := b.Shape[0], b.Shape[1]
 
-	res := a2D.MatMul(b)
-	// Flatten result back to 1D
-	return res.Reshape([]int{b.Shape[1]})
+	out := &Tensor{
+		data:         StorageFrom(v.Device.Allocate(n)),
+		Shape:        []int{n},
+		Strides:      []int{1},
+		Device:       v.Device,
+		RequiresGrad: v.RequiresGrad || b.RequiresGrad,
+		Parents:      []*Tensor{v, b},
+		contiguous:   true,
+	}
+
+	// out(1,n) = v(1,m) @ b(m,n)
+	bOp, releaseB, err := b.asMatOperand()
+	if err != nil {
+		panic(fmt.Sprintf("VecMatMul: matrix operand: %v", err))
+	}
+	defer releaseB()
+
+	v.Device.MatMul(vecOperand(v, true), bOp, out.Data(), 1.0, 0.0)
+
+	out.Backward = func() {
+		if out.grad == nil {
+			return
+		}
+		// out is contiguous, so its gradient is a (1, n) row.
+		gradOut := backend.MatOperand{Data: out.Grad(), Rows: 1, Cols: n, LD: n}
+
+		if v.RequiresGrad {
+			bOp, release, err := b.asMatOperand()
+			if err != nil {
+				panic(fmt.Sprintf("VecMatMul backward: matrix operand: %v", err))
+			}
+			defer release()
+
+			// gradV = gradOut(1,n) @ b^T(n,m)  ->  (1, m)
+			gradV := out.Device.Allocate(m)
+			out.Device.MatMul(gradOut, bOp.T(), gradV, 1.0, 0.0)
+			v.AccumulateGrad(gradV)
+			out.Device.Free(gradV)
+		}
+
+		if b.RequiresGrad {
+			// gradB = v^T(m,1) @ gradOut(1,n)  ->  (m, n)
+			gradB := out.Device.Allocate(m * n)
+			out.Device.MatMul(vecOperand(v, true).T(), gradOut, gradB, 1.0, 0.0)
+			b.AccumulateGrad(gradB)
+			out.Device.Free(gradB)
+		}
+	}
+
+	return out
 }
 
 // Dot performs the dot product between two 1D tensors.
@@ -377,48 +494,39 @@ func (a *Tensor) Inverse() *Tensor {
 	}
 
 	aContig := Contiguous(a)
-	aContigF64 := make([]float64, len(aContig.Data()))
-	for i, v := range aContig.Data() {
-		aContigF64[i] = float64(v)
-	}
-	mA := mat.NewDense(aContig.Shape[0], aContig.Shape[1], aContigF64)
 
-	var mInv mat.Dense
-	err := mInv.Inverse(mA)
+	outData := a.Device.Allocate(len(aContig.Data()))
+	err := a.Device.Inverse(aContig.Data(), outData, a.Shape[0])
 	if err != nil {
-		panic("Matrix is singular and cannot be inverted")
+		panic(fmt.Sprintf("Inverse failed: %v", err))
 	}
 
-	resultData := mInv.RawMatrix().Data
-	resultDataCopy := pools.GetBuffer(len(resultData))
+	out := NewTensor(outData, a.Shape, a)
 
-	for i, v := range resultData {
-		resultDataCopy[i] = float32(v)
-	}
-
-	out := NewTensor(resultDataCopy, []int{aContig.Shape[0], aContig.Shape[1]}, a)
-	// --- AUTOGRAD LOGIC START ---
 	out.Backward = func() {
 		// Y = X^-1
 		// dL/dX = - (Y^T) * GradOut * (Y^T)
-		mY := mat.NewDense(out.Shape[0], out.Shape[1], resultData)
-		mGradOut := mat.NewDense(out.Shape[0], out.Shape[1], resultData)
-
-		// Temporary: (Y^T) * GradOut
-		tmpData := make([]float64, out.Shape[0]*out.Shape[1])
-		tmp := mat.NewDense(out.Shape[0], out.Shape[1], tmpData)
-		tmp.Mul(mY.T(), mGradOut)
-
-		// Final: tmp * (Y^T)
-		finalGradData := make([]float64, out.Shape[0]*out.Shape[1])
-		finalGrad := mat.NewDense(out.Shape[0], out.Shape[1], finalGradData)
-		finalGrad.Mul(tmp, mY.T())
-
-		a.ensureGrad()
-		ag := a.Grad()
-		for i, val := range finalGrad.RawMatrix().Data {
-			ag[i] -= float32(val) // Note the subtraction (negative sign in formula)
+		if out.grad == nil {
+			return
 		}
+		n := out.Shape[0]
+
+		// Y and dL/dY are both freshly allocated, contiguous, n x n.
+		yOp := backend.MatOperand{Data: out.Data(), Rows: n, Cols: n, LD: n}
+		gOp := backend.MatOperand{Data: out.Grad(), Rows: n, Cols: n, LD: n}
+
+		// tmp = Y^T @ dL/dY
+		tmp := a.Device.Allocate(n * n)
+		a.Device.MatMul(yOp.T(), gOp, tmp, 1.0, 0.0)
+
+		// dL/dX = -(tmp @ Y^T)   -- the negation is just alpha = -1
+		grad := a.Device.Allocate(n * n)
+		tmpOp := backend.MatOperand{Data: tmp, Rows: n, Cols: n, LD: n}
+		a.Device.MatMul(tmpOp, yOp.T(), grad, -1.0, 0.0)
+
+		a.AccumulateGrad(grad)
+		a.Device.Free(tmp)
+		a.Device.Free(grad)
 	}
 	return out
 }
@@ -449,7 +557,7 @@ func (t *Tensor) Slice(starts, ends []int) *Tensor {
 	newShape := make([]int, nd)
 	fullSlice := true
 
-	for i := 0; i < nd; i++ {
+	for i := range nd {
 		s := starts[i]
 		e := ends[i]
 
@@ -483,7 +591,7 @@ func (t *Tensor) Slice(starts, ends []int) *Tensor {
 		Strides:      strides,
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
-		Offset:       t.Offset + offset,
+		Offset:       0,
 	}
 	out.Parents = []*Tensor{t}
 
@@ -495,7 +603,7 @@ func (t *Tensor) Slice(starts, ends []int) *Tensor {
 		og := out.Grad()
 
 		// Build a full-sized gradient for the parent and place the sliced gradient into it.
-		parentGrad := pools.GetBuffer(len(t.Data()))
+		parentGrad := pools.GetZeroedBuffer(len(t.Data()))
 
 		// Fast path for scalar-like result (0-d or all dims size 1).
 		if len(out.Shape) == 0 || len(og) == 1 && product(out.Shape) == 1 {
@@ -594,11 +702,11 @@ func (t *Tensor) asMatOperand() (backend.MatOperand, func(), error) {
 	// backward, not through this copy.
 	buf := t.Device.Allocate(rows * cols)
 
-	// Offset is passed as 0, not t.Offset: today Slice reslices storage to
-	// [offset:] *and* sets Offset, so t.Data() already begins at the logical
-	// origin and passing t.Offset again would double-apply it. When P1 fixes
-	// Slice to carry Offset without reslicing, this becomes t.Offset and the
-	// two t.Data() calls above become t.Data()[t.Offset:].
+	// Offset is passed as 0, and t.Data() is used unshifted, because the offset
+	// is carried by the storage itself: Slice reslices to [offset:] and leaves
+	// Offset at 0. That is the settled representation -- exactly one place
+	// records where a view begins. Should Tensor.Offset ever become meaningful
+	// again, this call and the two t.Data() reads above must both account for it.
 	t.Device.Contiguous(t.Data(), buf, t.Shape, t.Strides, 0)
 
 	return backend.MatOperand{

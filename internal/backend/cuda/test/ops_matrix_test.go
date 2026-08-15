@@ -1,4 +1,4 @@
-// go:build cuda
+//go:build cuda
 
 package cuda_test
 

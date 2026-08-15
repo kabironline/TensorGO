@@ -181,8 +181,12 @@ func TestGradcheckViews(t *testing.T) {
 		// sizes by len(a.Data()), ignoring strides/offset -- every other binary op
 		// routes through Broadcast*Op, which calls Contiguous() first. The
 		// analytic gradients come back as a transposed permutation of the true
-		// ones. Fix: route Add through Contiguous() and size by TotalSize(Shape).
-		t.Skip("P1: ops_matrix.go Add fast path ignores strides")
+		// ones. Confirmed independent of the grad-layout fix: slice-then-transpose
+		// went green with that change, this did not.
+		//
+		// Fix: guard the fast path on contiguity so a strided operand falls
+		// through to BroadcastAddOp, which already materialises via Contiguous().
+		t.Skip("P1: ops_matrix.go Add fast path reads a.Data() raw, ignoring strides")
 
 		a := leaf(seq(6), 2, 3)
 		b := leaf(seq(6), 3, 2)
@@ -241,8 +245,6 @@ func TestGradcheckViews(t *testing.T) {
 		// Offset, so the offset is applied twice. Forward and backward disagree
 		// about where the data lives -- the gradient lands 6 elements past where
 		// it belongs. Fix: pick one representation, not both.
-		t.Skip("P1: ops_matrix.go Slice applies its offset twice")
-
 		a := leaf(seq(12), 4, 3)
 		gradcheck.Check(t, "slice", func() *tensor.Tensor {
 			return a.Slice([]int{1, 0}, []int{3, 3})
@@ -250,13 +252,18 @@ func TestGradcheckViews(t *testing.T) {
 	})
 
 	t.Run("slice-then-transpose", func(t *testing.T) {
-		// KNOWN FAILURE (P1): panics with index out of range in Transpose's
-		// backward. ensureGrad sizes the gradient by data.Length() while
-		// AllocGrad uses TotalSize(Shape); for a sliced view these differ, so the
-		// transpose backward indexes past the end. Fix: one canonical rule --
-		// gradients are always logical-order contiguous of size TotalSize(Shape).
-		t.Skip("P1: ensureGrad/AllocGrad disagree on gradient buffer size")
-
+		// KNOWN FAILURE (P1): no longer panics now that Slice carries its offset
+		// in the storage, but the gradient still comes back as a transposed
+		// permutation of the true one.
+		//
+		// Root cause is the grad-buffer sizing rule, not Slice: ensureGrad sizes
+		// by data.Length() (9 for a 2x3 view resliced out of a 4x3) while the
+		// logical size is TotalSize(Shape) (6). The mismatch pushes
+		// AccumulateGrad off its fast path and onto the slow one, and the two
+		// paths store gradients in *different* orders -- logical vs physical.
+		// Fix: one canonical rule -- gradients are always logical-order
+		// contiguous of size TotalSize(Shape) -- which also removes the
+		// ensureGrad/AllocGrad divergence.
 		a := leaf(seq(12), 4, 3)
 		gradcheck.Check(t, "slice+transpose", func() *tensor.Tensor {
 			return a.Slice([]int{1, 0}, []int{3, 3}).Transpose([]int{1, 0})
@@ -286,4 +293,29 @@ func TestGradcheckChains(t *testing.T) {
 			return x.MatMul(w1).Tanh().MatMul(w2)
 		}, x, w1, w2)
 	})
+}
+
+// Reshape of a *non-contiguous* input. Reshape materialises via Contiguous in
+// that case, and Contiguous returns a graph-detached tensor -- so this checks
+// the gradient still reaches the original leaf.
+func TestGradcheckReshapeOnView(t *testing.T) {
+	a := leaf(seq(6), 2, 3)
+	gradcheck.Check(t, "reshape/aT", func() *tensor.Tensor {
+		return a.Transpose([]int{1, 0}).Reshape([]int{6})
+	}, a)
+}
+
+// Inverse's backward is a composite: -(Y^T @ gradOut @ Y^T). Finite differences
+// verify it without anyone having to re-derive the matrix-inverse derivative --
+// the previous version silently used the forward result in place of gradOut and
+// no hand-written expected-value test would have caught that.
+func TestGradcheckInverse(t *testing.T) {
+	// Diagonally dominant, so it is well conditioned and safe to perturb.
+	a := leaf([]float32{
+		4, 1, 0,
+		1, 5, 1,
+		0, 1, 6,
+	}, 3, 3)
+
+	gradcheck.Check(t, "inverse", func() *tensor.Tensor { return a.Inverse() }, a)
 }

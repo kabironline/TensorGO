@@ -40,59 +40,38 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 	}
 
 	out.Backward = func() {
-		// Nothing to do if no gradient was produced for the output.
 		if out.grad == nil {
 			return
 		}
 
-		// Ensure parent has a gradient buffer to accumulate into.
-		if t.grad == nil {
-			t.AllocGrad()
-		}
+		n := TotalSize(t.Shape)
+		parentGrad := t.Device.Allocate(n)
+		t.Device.Fill(parentGrad, 0, n) // pool blocks are not zeroed
+		defer t.Device.Free(parentGrad)
 
-		// Build inverse permutation: for each axis k in the original tensor,
-		// inv[k] gives the index in out.Shape corresponding to that axis.
-		inv := make([]int, len(order))
-		for i, axis := range order {
-			inv[axis] = i
-		}
-
-		total := TotalSize(out.Shape)
-		if total == 0 {
-			return
-		}
-
-		// Fast-path: identity permutation -> direct accumulation.
-		isIdentity := true
-		for k := range order {
-			if order[k] != k {
-				isIdentity = false
-				break
-			}
-		}
-		if isIdentity {
-			t.AccumulateGrad(out.Grad())
-			return
-		}
-
-		// Generic path: iterate logical coordinates of the output once and map
-		// them to the parent's physical indices.
-		tg := t.Grad()
 		og := out.Grad()
+
+		// t's LOGICAL strides -- not t.Strides, which describe the storage layout.
+		tStrides := ComputeStrides(t.Shape)
 		coords := make([]int, len(out.Shape))
-		for i := 0; i < total; i++ {
+
+		for i := range og {
+			// Decompose i into coordinates of out.
 			idx := i
 			for k := len(coords) - 1; k >= 0; k-- {
 				coords[k] = idx % out.Shape[k]
 				idx /= out.Shape[k]
 			}
-
-			tIdx := t.Offset
-			for k := 0; k < len(coords); k++ {
-				tIdx += coords[inv[k]] * t.Strides[k]
+			// Axis k of out is axis order[k] of t, so the same coordinate contributes
+			// through t's logical stride for that axis.
+			tIdx := 0
+			for k := range coords {
+				tIdx += coords[k] * tStrides[order[k]]
 			}
-			tg[tIdx] += og[i]
+			parentGrad[tIdx] += og[i]
 		}
+
+		t.AccumulateGrad(parentGrad)
 	}
 
 	return out
@@ -130,16 +109,21 @@ func (t *Tensor) Reshape(newShape []int) *Tensor {
 		panic("Reshape: total size must remain the same")
 	}
 
+	src := t
+	if !t.Contiguous() {
+		src = Contiguous(t)
+	}
+
 	out := &Tensor{
-		data:    t.data, // view: shares the parent's storage
-		Shape:   actualShape,
-		Strides: ComputeStrides(actualShape),
-		Offset:  t.Offset,
-		// Grad allocated lazily
+		data:         src.data, // shares t's storage, or the materialised copy's
+		Shape:        actualShape,
+		Strides:      ComputeStrides(actualShape),
+		Offset:       0,
 		grad:         nil,
 		Parents:      []*Tensor{t},
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
+		contiguous:   true,
 	}
 
 	if t.RequiresGrad {
@@ -147,9 +131,7 @@ func (t *Tensor) Reshape(newShape []int) *Tensor {
 			if out.grad == nil {
 				return
 			}
-			// Gradient of reshape is just reshape back to original shape
-			// and accumulate. Since Data is shared, we just pass the buffer.
-			t.AccumulateGrad(out.Grad())
+			t.AccumulateGrad(out.Grad()) // maps logical -> physical for t's strides
 		}
 	}
 

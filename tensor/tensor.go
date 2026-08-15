@@ -361,14 +361,14 @@ func (t *Tensor) clearGraphHelper(visited map[*Tensor]bool) {
 	}
 }
 
-// ensureGrad makes sure t.Grad is allocated. It's safe to call multiple times.
+// ensureGrad makes sure t.grad is allocated. Safe to call repeatedly.
 func (t *Tensor) ensureGrad() {
-	if t.grad == nil {
-		// Use underlying data length to ensure we can index into physical positions
-		t.grad = StorageFrom(t.Device.Allocate(t.data.Length()))
-		// Initialize gradient to zero
-		t.Device.Fill(t.Grad(), 0, t.grad.Length())
+	if t.grad != nil {
+		return
 	}
+	n := TotalSize(t.Shape)
+	t.grad = StorageFrom(t.Device.Allocate(n))
+	t.Device.Fill(t.Grad(), 0, n)
 }
 
 // ZeroGrad zeroes this tensor's gradient buffer, allocating it first if it does
@@ -389,10 +389,7 @@ func (t *Tensor) ZeroGrad() {
 // for packages that create parameters which will always participate in
 // backpropagation (e.g., model weights and biases).
 func (t *Tensor) AllocGrad() {
-	if t.grad == nil {
-		t.grad = StorageFrom(t.Device.Allocate(TotalSize(t.Shape)))
-		t.Device.Fill(t.Grad(), 0, t.grad.Length())
-	}
+	t.ensureGrad()
 }
 
 // ToGradTensor returns a new Tensor sharing the Grad data of this tensor.

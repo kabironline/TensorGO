@@ -1,8 +1,11 @@
 package cpu
 
 import (
+	"fmt"
+
 	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas32"
+	"gonum.org/v1/gonum/mat"
 
 	"github.com/kabironline/nanograd/backend"
 )
@@ -43,4 +46,31 @@ func (bk *CPUBackend) MatMul(a, b backend.MatOperand, out []float32, alpha, beta
 			Data:   out,
 		},
 	)
+}
+
+func (bk *CPUBackend) Inverse(a []float32, out []float32, n int) error {
+	if n <= 0 {
+		return fmt.Errorf("Inverse: n must be positive, got %d", n)
+	}
+	if len(a) < n*n {
+		return fmt.Errorf("Inverse: input has %d elements, need %d", len(a), n*n)
+	}
+	if len(out) < n*n {
+		return fmt.Errorf("Inverse: out has %d elements, need %d", len(out), n*n)
+	}
+
+	aF64 := make([]float64, n*n)
+	for i := range aF64 {
+		aF64[i] = float64(a[i])
+	}
+
+	var inv mat.Dense
+	if err := inv.Inverse(mat.NewDense(n, n, aF64)); err != nil {
+		return fmt.Errorf("Inverse: %w", err)
+	}
+
+	for i, v := range inv.RawMatrix().Data { // straight into out
+		out[i] = float32(v)
+	}
+	return nil
 }

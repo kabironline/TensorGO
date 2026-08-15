@@ -7,11 +7,12 @@ layers to train real models: MNIST reaches **95.5%** with an MLP and **98.7%**
 with a CNN.
 
 > **Status: pre-1.0, under active redesign.** The API will change. See
-> [WIP-notes/Production-Readiness-Roadmap-2026-08-12.md](WIP-notes/Production-Readiness-Roadmap-2026-08-12.md)
-> for what is known-broken and the order it is being fixed in. Notably, several
-> operations on **non-contiguous tensors** (`Slice`, and `Add` on a transposed
-> view) have known-incorrect gradients — they are marked with skipped gradient
-> checks in `tensor/gradcheck_test.go`.
+> [WIP-notes/Engine-Roadmap.md](WIP-notes/Engine-Roadmap.md)
+> for what is known-broken and the order it is being fixed in. One known-incorrect
+> gradient remains: `Add` on a **transposed view** reads the underlying buffer in
+> storage order. It is marked with a skipped gradient check in
+> `tensor/test/gradcheck_test.go`; every other op passes finite differences across
+> contiguous, transposed, sliced, offset, broadcast, and reshaped inputs.
 
 ## Install
 
@@ -106,8 +107,12 @@ on every perturbed pass. The loss is a *position-weighted* sum rather than a
 plain one — a plain sum is permutation-invariant, so an op that reads a strided
 view in the wrong order would produce an identical loss and go undetected.
 
-Add a case to `tensor/gradcheck_test.go` for every new op, and cross it with
+Add a case to `tensor/test/gradcheck_test.go` for every new op, and cross it with
 non-contiguous inputs: that is where the bugs are.
+
+Tests live in `test/` subpackages alongside the code they exercise. That keeps
+them black-box, but it means `go test -cover` alone reports 0% — use `make cover`,
+which passes the `-coverpkg` needed to attribute coverage to the source packages.
 
 ## Layout
 

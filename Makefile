@@ -8,6 +8,11 @@ GO      ?= go
 PKGS    ?= ./...
 CPU_PKGS = ./tensor/... ./storage/... ./optim/... ./nn/... ./internal/backend/cpu/... ./gradcheck/...
 
+# Tests live in test/ subpackages (matching internal/backend/cuda/test), so a
+# plain `go test -cover` would attribute 0% to every package that actually
+# contains logic. -coverpkg points the instrumentation at the source packages.
+COVERPKG = ./tensor/...,./storage/...,./optim/...,./nn/...,./internal/backend/cpu/...
+
 # Override if your CUDA toolkit lives elsewhere:
 #   make test-cuda CUDA_PATH=/opt/cuda
 CUDA_PATH ?= /usr/local/cuda
@@ -34,11 +39,11 @@ test-race:
 
 .PHONY: gradcheck
 gradcheck: ## verify every backward pass against finite differences
-	$(GO) test -run Gradcheck -count=1 -v ./tensor/
+	$(GO) test -run Gradcheck -count=1 -v ./tensor/test/
 
 .PHONY: cover
 cover:
-	$(GO) test -count=1 -coverprofile=coverage.out $(CPU_PKGS)
+	$(GO) test -count=1 -coverpkg=$(COVERPKG) -coverprofile=coverage.out $(CPU_PKGS)
 	$(GO) tool cover -func=coverage.out | tail -1
 
 .PHONY: cover-html
@@ -47,12 +52,12 @@ cover-html: cover
 
 .PHONY: canary
 canary: ## MNIST MLP, >95% gate, ~10s -- the only whole-stack check
-	$(GO) test -run 'TestMNIST$$' -v -count=1 -timeout 20m ./example/MNIST/
+	$(GO) test -tags examples -run 'TestMNIST$$' -v -count=1 -timeout 20m ./example/MNIST/
 
 .PHONY: canary-all
 canary-all: ## adds the CNN (~100s) and CIFAR-10
-	$(GO) test -run 'TestMNIST$$|TestMNISTCNN' -v -count=1 -timeout 60m ./example/MNIST/
-	$(GO) test -run TestCIFAR10_CNN -v -count=1 -timeout 90m ./example/CIFAR-10/
+	$(GO) test -tags examples -run 'TestMNIST$$|TestMNISTCNN' -v -count=1 -timeout 60m ./example/MNIST/
+	$(GO) test -tags examples -run TestCIFAR10_CNN -v -count=1 -timeout 90m ./example/CIFAR-10/
 
 .PHONY: kernels
 kernels: ## compile the CUDA kernels (requires nvcc)
