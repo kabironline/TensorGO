@@ -42,7 +42,7 @@ func TestNewTensor(t *testing.T) {
 		}
 	}
 
-	if !tens.Contiguous() {
+	if !tens.IsContiguous() {
 		t.Error("New tensor should be contiguous")
 	}
 }
@@ -88,7 +88,7 @@ func TestTranspose(t *testing.T) {
 		t.Errorf("Expected shape [3, 2], got %v", transposed.Shape)
 	}
 
-	if transposed.Contiguous() {
+	if transposed.IsContiguous() {
 		t.Error("Transposed tensor should not be contiguous")
 	}
 
@@ -194,12 +194,12 @@ func TestContiguous(t *testing.T) {
 	tens := tensor.NewTensor(data, []int{2, 3})
 
 	transposed := tens.Transpose([]int{1, 0})
-	if transposed.Contiguous() {
+	if transposed.IsContiguous() {
 		t.Fatal("Transpose should not be contiguous")
 	}
 
 	contig := tensor.Contiguous(transposed)
-	if !contig.Contiguous() {
+	if !contig.IsContiguous() {
 		t.Fatal("Contiguous() should return a contiguous tensor")
 	}
 

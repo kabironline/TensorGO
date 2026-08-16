@@ -69,11 +69,11 @@ func (t *Tensor) BroadcastTo(targetShape []int) *Tensor {
 		data:         t.data, // view: shares the parent's storage
 		Shape:        append([]int(nil), targetShape...),
 		Strides:      newStrides,
-		Offset:       t.Offset,
 		grad:         nil,
 		Parents:      []*Tensor{t},
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
+		contiguous:   false, // broadcasted tensors are not contiguous
 	}
 
 	out.Backward = func() {
@@ -113,7 +113,7 @@ func BroadcastAddOp(a, b *Tensor) *Tensor {
 	outData := a.Device.BroadcastAdd(aContig.Data(), bContig.Data(), aContig.Shape, bContig.Shape, outShape)
 
 	// Create output tensor manually to avoid ToDevice being called on GPU memory
-	return &Tensor{
+	out := &Tensor{
 		data:         StorageFrom(outData),
 		Shape:        outShape,
 		Strides:      ComputeStrides(outShape),
@@ -122,6 +122,34 @@ func BroadcastAddOp(a, b *Tensor) *Tensor {
 		Parents:      []*Tensor{a, b},
 		contiguous:   true,
 	}
+
+	out.Backward = func() {
+		// formula for gradient accumulation:
+		// grad_a = ReduceSumTo(grad_out, out_shape, a_shape)
+		// grad_b = ReduceSumTo(grad_out, out_shape, b_shape)
+		if out.grad == nil {
+			return
+		}
+		gradOut := out.Grad()
+
+		if a.RequiresGrad {
+			gradA := ReduceSumTo(a.Device, gradOut, out.Shape, a.Shape)
+			a.AccumulateGrad(gradA)
+			if !sameShape(out.Shape, a.Shape) {
+				a.Device.Free(gradA)
+			}
+		}
+
+		if b.RequiresGrad {
+			gradB := ReduceSumTo(b.Device, gradOut, out.Shape, b.Shape)
+			b.AccumulateGrad(gradB)
+			if !sameShape(out.Shape, b.Shape) {
+				b.Device.Free(gradB)
+			}
+		}
+	}
+
+	return out
 }
 
 // BroadcastSubOp performs broadcasted element-wise subtraction.
@@ -134,7 +162,7 @@ func BroadcastSubOp(a, b *Tensor) *Tensor {
 	outData := a.Device.BroadcastSub(aContig.Data(), bContig.Data(), aContig.Shape, bContig.Shape, outShape)
 
 	// Create output tensor manually to avoid ToDevice being called on GPU memory
-	return &Tensor{
+	out := &Tensor{
 		data:         StorageFrom(outData),
 		Shape:        outShape,
 		Strides:      ComputeStrides(outShape),
@@ -143,6 +171,35 @@ func BroadcastSubOp(a, b *Tensor) *Tensor {
 		Parents:      []*Tensor{a, b},
 		contiguous:   true,
 	}
+	out.Backward = func() {
+		// out = a - b, so:
+		//   grad_a =  ReduceSumTo(grad_out, out_shape, a_shape)
+		//   grad_b = -ReduceSumTo(grad_out, out_shape, b_shape)
+		// The sign on b is what distinguishes this from BroadcastAddOp.
+		if out.grad == nil {
+			return
+		}
+		gradOut := out.Grad()
+
+		if a.RequiresGrad {
+			gradA := ReduceSumTo(a.Device, gradOut, out.Shape, a.Shape)
+			a.AccumulateGrad(gradA)
+			if !sameShape(out.Shape, a.Shape) {
+				a.Device.Free(gradA)
+			}
+		}
+
+		if b.RequiresGrad {
+			negGrad := b.Device.MulScalar(gradOut, -1.0, len(gradOut))
+			gradB := ReduceSumTo(b.Device, negGrad, out.Shape, b.Shape)
+			b.AccumulateGrad(gradB)
+			if !sameShape(out.Shape, b.Shape) {
+				b.Device.Free(gradB)
+			}
+			b.Device.Free(negGrad)
+		}
+	}
+	return out
 }
 
 // BroadcastMulOp performs broadcasted element-wise multiplication.
@@ -155,7 +212,7 @@ func BroadcastMulOp(a, b *Tensor) *Tensor {
 	outData := a.Device.BroadcastMul(aContig.Data(), bContig.Data(), aContig.Shape, bContig.Shape, outShape)
 
 	// Create output tensor manually to avoid ToDevice being called on GPU memory
-	return &Tensor{
+	out := &Tensor{
 		data:         StorageFrom(outData),
 		Shape:        outShape,
 		Strides:      ComputeStrides(outShape),
@@ -164,6 +221,36 @@ func BroadcastMulOp(a, b *Tensor) *Tensor {
 		Parents:      []*Tensor{a, b},
 		contiguous:   true,
 	}
+
+	out.Backward = func() {
+		// formula for gradient accumulation:
+		// grad_a = ReduceSumTo(grad_out * b, out_shape, a_shape)
+		// grad_b = ReduceSumTo(grad_out * a, out_shape, b_shape)
+		if out.grad == nil {
+			return
+		}
+		gradOut := out.Grad()
+
+		if a.RequiresGrad {
+			gradAData := a.Device.BroadcastMul(gradOut, bContig.Data(), out.Shape, bContig.Shape, out.Shape)
+			gradA := ReduceSumTo(a.Device, gradAData, out.Shape, a.Shape)
+			a.AccumulateGrad(gradA)
+			if !sameShape(out.Shape, a.Shape) {
+				a.Device.Free(gradA)
+			}
+		}
+
+		if b.RequiresGrad {
+			gradBData := a.Device.BroadcastMul(gradOut, aContig.Data(), out.Shape, aContig.Shape, out.Shape)
+			gradB := ReduceSumTo(b.Device, gradBData, out.Shape, b.Shape)
+			b.AccumulateGrad(gradB)
+			if !sameShape(out.Shape, b.Shape) {
+				b.Device.Free(gradB)
+			}
+		}
+	}
+
+	return out
 }
 
 // BroadcastDivOp performs broadcasted element-wise division.
@@ -176,7 +263,7 @@ func BroadcastDivOp(a, b *Tensor) *Tensor {
 	outData := a.Device.BroadcastDiv(aContig.Data(), bContig.Data(), aContig.Shape, bContig.Shape, outShape)
 
 	// Create output tensor manually to avoid ToDevice being called on GPU memory
-	return &Tensor{
+	out := &Tensor{
 		data:         StorageFrom(outData),
 		Shape:        outShape,
 		Strides:      ComputeStrides(outShape),
@@ -185,4 +272,27 @@ func BroadcastDivOp(a, b *Tensor) *Tensor {
 		Parents:      []*Tensor{a, b},
 		contiguous:   true,
 	}
+	out.Backward = func() {
+		// formula for gradient accumulation:
+		// grad_a = ReduceSumTo(grad_out / b, out_shape, a_shape)
+		// grad_b = ReduceSumTo(-grad_out * a / (b^2), out_shape, b_shape)
+		gradOut := out.Grad()
+
+		if a.RequiresGrad {
+			gradA := ReduceSumTo(a.Device, gradOut, out.Shape, a.Shape)
+			a.AccumulateGrad(gradA)
+			if !sameShape(out.Shape, a.Shape) {
+				a.Device.Free(gradA)
+			}
+		}
+
+		if b.RequiresGrad {
+			gradB := ReduceSumTo(b.Device, gradOut, out.Shape, b.Shape)
+			b.AccumulateGrad(gradB)
+			if !sameShape(out.Shape, b.Shape) {
+				b.Device.Free(gradB)
+			}
+		}
+	}
+	return out
 }

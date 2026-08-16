@@ -1,6 +1,7 @@
 package tensor
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/kabironline/nanograd/backend"
@@ -14,7 +15,6 @@ type Tensor struct {
 	Parents []*Tensor // Tensors that were used to compute this tensor
 
 	Backward func() // Function to compute gradients during backpropagation
-	Offset   int    // Starting point in the Data slice
 
 	Device backend.Backend
 
@@ -51,7 +51,7 @@ func NewTensor(data []float32, shape []int, parents ...*Tensor) *Tensor {
 	return &Tensor{
 		data:    dataStorage,
 		Shape:   shape,
-		Strides: computeStrides(shape),
+		Strides: ComputeStrides(shape),
 		// grad is allocated lazily to avoid unnecessary allocations for tensors
 		// that never participate in backpropagation.
 		grad:         nil,
@@ -80,7 +80,7 @@ func NewEmptyTensor(shape []int, dev backend.Backend) *Tensor {
 	return &Tensor{
 		data:       dataStorage,
 		Shape:      shape,
-		Strides:    computeStrides(shape),
+		Strides:    ComputeStrides(shape),
 		Device:     dev,
 		contiguous: true,
 	}
@@ -161,17 +161,6 @@ func (t *Tensor) Grad() []float32 {
 	return t.grad.F32()
 }
 
-// Helper to calculate strides for row-major order
-func computeStrides(shape []int) []int {
-	strides := make([]int, len(shape))
-	s := 1
-	for i := len(shape) - 1; i >= 0; i-- {
-		strides[i] = s
-		s *= shape[i]
-	}
-	return strides
-}
-
 // RandomInit fills the tensor with Xavier/Glorot initialization
 func (t *Tensor) RandomInit() {
 	// Glorot / Xavier normal initialization:
@@ -215,58 +204,33 @@ func (t *Tensor) ZeroInit() {
 	t.Device.Fill(t.Data(), 0.0, t.data.Length())
 }
 
-// AccumulateGrad adds the given gradient data to the tensor's gradient.
-// It handles non-contiguous tensors (views) correctly by mapping logical indices to physical indices.
-// grad must be a contiguous slice of data matching the logical shape of the tensor.
+// AccumulateGrad adds grad into this tensor's gradient.
+//
+// grad must be in LOGICAL order and exactly TotalSize(t.Shape) elements long,
+// which is also how t.grad is always stored -- see ensureGrad.
 func (t *Tensor) AccumulateGrad(grad []float32) {
 	if !t.RequiresGrad {
 		return
 	}
-	if len(grad) != TotalSize(t.Shape) {
-		panic("AccumulateGrad: gradient size does not match tensor shape")
+	n := TotalSize(t.Shape)
+	if len(grad) != n {
+		panic(fmt.Sprintf("AccumulateGrad: got %d elements, want %d for shape %v",
+			len(grad), n, t.Shape))
 	}
 
 	// Ensure a grad buffer exists for accumulation.
 	t.ensureGrad()
 
-	// Fast path: contiguous tensors use backend Add operation
-	if t.Contiguous() && t.Offset == 0 {
-		// Use backend's Add operation: t.Grad = t.Grad + grad
-		t.Device.Add(t.Grad(), grad, t.Grad(), t.grad.Length())
-		return
-	}
-
-	// Medium-fast path: aligned gradients
-	if len(grad) == t.grad.Length() && t.Offset == 0 {
-		t.Device.Add(t.Grad(), grad, t.Grad(), t.grad.Length())
-		return
-	}
-
-	// Slow path for views - need to copy to CPU for indexed access
-	// This is inefficient for GPU but views should be rare during backprop
-	if t.Device.IsGPU() {
-		if memTransfer, ok := t.Device.(backend.MemoryTransfer); ok {
-			// Copy gradients to CPU
-			cpuGrad := memTransfer.ToCPU(t.Grad())
-			cpuIncomingGrad := memTransfer.ToCPU(grad)
-
-			// Accumulate on CPU
-			for i, g := range cpuIncomingGrad {
-				physicalIdx := t.PhysicalIndexFromLinearIndex(i)
-				cpuGrad[physicalIdx] += g
-			}
-
-			// Copy back to GPU
-			t.grad = StorageFrom(memTransfer.ToDevice(cpuGrad))
-			return
-		}
-	}
-
-	// CPU fallback for views
-	for i, g := range grad {
-		physicalIdx := t.PhysicalIndexFromLinearIndex(i)
-		t.Grad()[physicalIdx] += g
-	}
+	// One path, deliberately. Gradients are ALWAYS logical-order and
+	// TotalSize(Shape) long -- for views as much as for contiguous tensors -- so
+	// accumulation is always a straight element-wise add.
+	//
+	// Do not reintroduce a physical-index scatter for non-contiguous tensors.
+	// That was the old behaviour, and it meant t.grad held logical order on one
+	// path and physical order on another, with the choice made by an incidental
+	// length comparison. Anything that produces a gradient for a view (Transpose,
+	// Slice) permutes it into logical order before calling here.
+	t.Device.Add(t.Grad(), grad, t.Grad(), n)
 }
 
 // TotalSize computes the total number of elements of a tensor from its shape.
@@ -278,8 +242,10 @@ func (t *Tensor) TotalSize() int {
 	return total
 }
 
-// Contiguous returns whether the tensor's storage is contiguous in row-major order.
-func (t *Tensor) Contiguous() bool {
+// IsContiguous reports whether the tensor's storage is laid out contiguously in
+// row-major order. Named IsContiguous, not Contiguous, so it cannot be confused
+// with the package-level Contiguous(t) that returns a materialised copy.
+func (t *Tensor) IsContiguous() bool {
 	return t.contiguous
 }
 
@@ -402,7 +368,6 @@ func (t *Tensor) ToGradTensor() *Tensor {
 		data:         t.grad,
 		Shape:        append([]int(nil), t.Shape...),
 		Strides:      append([]int(nil), t.Strides...),
-		Offset:       t.Offset,
 		Device:       t.Device,
 		RequiresGrad: false, // Gradients do not require gradients themselves by default
 	}
@@ -434,4 +399,60 @@ func (t *Tensor) To(dev backend.Backend) *Tensor {
 
 	t.Device = dev
 	return t
+}
+
+// Detach returns a tensor that shares this tensor's storage but is disconnected
+// from the autograd graph: no parents, no backward, and RequiresGrad false.
+//
+// Use it to stop gradients flowing through a value (a target, a frozen feature)
+// without copying the data. Because the storage is shared, writing through the
+// result also changes the original -- use Clone for an independent copy.
+func (t *Tensor) Detach() *Tensor {
+	return &Tensor{
+		data:         t.data,
+		grad:         nil,
+		Shape:        append([]int(nil), t.Shape...),
+		Strides:      append([]int(nil), t.Strides...),
+		Parents:      nil,
+		Backward:     nil,
+		Device:       t.Device,
+		RequiresGrad: false,
+		contiguous:   t.contiguous,
+	}
+}
+
+// Clone returns a contiguous deep copy of this tensor that stays connected to
+// the autograd graph: gradients flowing into the copy are passed straight
+// through to the original, since a copy is the identity function.
+//
+// The result is always contiguous, even when the source is a strided view.
+func (t *Tensor) Clone() *Tensor {
+	src := t
+	if !t.IsContiguous() {
+		src = Contiguous(t)
+	}
+
+	n := TotalSize(t.Shape)
+	buf := t.Device.Allocate(n)
+	t.Device.Copy(buf, src.Data()[:n])
+
+	out := &Tensor{
+		data:         StorageFrom(buf),
+		Shape:        append([]int(nil), t.Shape...),
+		Strides:      ComputeStrides(t.Shape),
+		Parents:      []*Tensor{t},
+		Device:       t.Device,
+		RequiresGrad: t.RequiresGrad,
+		contiguous:   true,
+	}
+
+	if t.RequiresGrad {
+		out.Backward = func() {
+			if out.grad == nil {
+				return
+			}
+			t.AccumulateGrad(out.Grad())
+		}
+	}
+	return out
 }

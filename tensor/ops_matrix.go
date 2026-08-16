@@ -9,8 +9,8 @@ import (
 
 // Add performs element-wise addition between two tensors.
 func (a *Tensor) Add(b *Tensor) *Tensor {
-	// Simple path if shapes match
-	if sameShape(a.Shape, b.Shape) {
+	// Simple path if shapes match, strides match, and both tensors are contiguous. This avoids broadcasting and uses optimized Gonum paths.
+	if sameShape(a.Shape, b.Shape) && sameStrides(a.Strides, b.Strides) && a.contiguous && b.contiguous {
 		outData := a.Device.Allocate(TotalSize(a.Shape))
 		a.Device.Add(a.Data(), b.Data(), outData, TotalSize(a.Shape))
 
@@ -58,6 +58,19 @@ func (a *Tensor) Add(b *Tensor) *Tensor {
 
 // sameShape is a helper to compare shapes quickly.
 func sameShape(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// sameStrides is a helper to compare strides quickly.
+func sameStrides(a, b []int) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -591,7 +604,7 @@ func (t *Tensor) Slice(starts, ends []int) *Tensor {
 		Strides:      strides,
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
-		Offset:       0,
+		contiguous:   false, // Sliced tensors are not contiguous by default
 	}
 	out.Parents = []*Tensor{t}
 

@@ -20,7 +20,7 @@ func (t *Tensor) getIndex(indices ...int) int {
 	if len(indices) != len(t.Shape) {
 		panic(fmt.Sprintf("expected %d indices, got %d", len(t.Shape), len(indices)))
 	}
-	idx := t.Offset
+	idx := 0
 	for i, ind := range indices {
 		if ind < 0 || ind >= t.Shape[i] {
 			panic(fmt.Sprintf("index %d out of bounds for dimension %d (size %d)", ind, i, t.Shape[i]))
@@ -43,10 +43,10 @@ func (t *Tensor) SetAt(val float32, indices ...int) {
 // PhysicalIndexFromLinearIndex converts a logical flat index to the physical
 // index in the underlying data buffer, accounting for strides and offset.
 func (t *Tensor) PhysicalIndexFromLinearIndex(index int) int {
-	if t.Contiguous() {
-		return t.Offset + index
+	if t.IsContiguous() {
+		return index
 	}
-	physicalIndex := t.Offset
+	physicalIndex := 0
 	for i := len(t.Shape) - 1; i >= 0; i-- {
 		physicalIndex += (index % t.Shape[i]) * t.Strides[i]
 		index /= t.Shape[i]
@@ -57,7 +57,7 @@ func (t *Tensor) PhysicalIndexFromLinearIndex(index int) int {
 // Contiguous returns a new tensor that is a contiguous copy of the original tensor.
 // If the original tensor is already contiguous, it returns the original tensor.
 func Contiguous(t *Tensor) *Tensor {
-	if t.Contiguous() {
+	if t.IsContiguous() {
 		return t
 	}
 
@@ -69,7 +69,7 @@ func Contiguous(t *Tensor) *Tensor {
 	// Provide the data starting at the tensor's offset so the backend's mapping
 	// logic can operate as if the logical origin is index 0.
 	// Backends implement Contiguous(dst) by writing into the provided out buffer.
-	t.Device.Contiguous(t.Data(), newData, shape, t.Strides, t.Offset)
+	t.Device.Contiguous(t.Data(), newData, shape, t.Strides, 0)
 
 	return &Tensor{
 		data:         StorageFrom(newData),

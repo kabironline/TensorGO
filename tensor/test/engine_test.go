@@ -144,7 +144,9 @@ func TestBackPropMatMul(t *testing.T) {
 	b := newTestTensor([]float32{5, 6, 7, 8}, []int{2, 2})
 	c := a.MatMul(b)
 
-	c.BackProp()
+	// The root is (2,2), not a scalar, so the all-ones seed this test assumes has
+	// to be supplied explicitly -- BackProp refuses to invent one.
+	c.BackPropWith([]float32{1, 1, 1, 1})
 
 	expectedGradA := []float32{11, 15, 11, 15}
 	expectedGradB := []float32{4, 4, 6, 6}
@@ -171,7 +173,9 @@ func TestBackPropBroadcastAdd(t *testing.T) {
 	y := newTestTensor([]float32{10, 20}, []int{1, 2})
 	z := x.Add(y)
 
-	z.BackProp()
+	// Non-scalar root (2,2): the all-ones seed this test assumes is supplied
+	// explicitly rather than invented by BackProp.
+	z.BackPropWith([]float32{1, 1, 1, 1})
 
 	expectedGradX := []float32{1, 1, 1, 1}
 	expectedGradY := []float32{2, 2}

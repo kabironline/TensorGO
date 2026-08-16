@@ -32,11 +32,11 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 		data:         t.data, // view: shares the parent's storage
 		Shape:        newShape,
 		Strides:      newStrides,
-		Offset:       t.Offset,
 		grad:         nil,
 		Parents:      []*Tensor{t},
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
+		contiguous:   false, // transposed tensors are not contiguous
 	}
 
 	out.Backward = func() {
@@ -110,7 +110,7 @@ func (t *Tensor) Reshape(newShape []int) *Tensor {
 	}
 
 	src := t
-	if !t.Contiguous() {
+	if !t.IsContiguous() {
 		src = Contiguous(t)
 	}
 
@@ -118,7 +118,6 @@ func (t *Tensor) Reshape(newShape []int) *Tensor {
 		data:         src.data, // shares t's storage, or the materialised copy's
 		Shape:        actualShape,
 		Strides:      ComputeStrides(actualShape),
-		Offset:       0,
 		grad:         nil,
 		Parents:      []*Tensor{t},
 		Device:       t.Device,

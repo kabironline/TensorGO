@@ -146,9 +146,9 @@ func CheckWithOptions(
 				break
 			}
 			t.Errorf("%s: input %d element %d: analytic=%g numeric=%g "+
-				"(rel err %g, tol %g)\n    input shape=%v strides=%v offset=%d",
+				"(rel err %g, tol %g)\n    input shape=%v strides=%v",
 				name, i, j, got, numeric, relError(got, numeric), opt.Tol,
-				in.Shape, in.Strides, in.Offset)
+				in.Shape, in.Strides)
 		}
 	}
 }

@@ -186,8 +186,6 @@ func TestGradcheckViews(t *testing.T) {
 		//
 		// Fix: guard the fast path on contiguity so a strided operand falls
 		// through to BroadcastAddOp, which already materialises via Contiguous().
-		t.Skip("P1: ops_matrix.go Add fast path reads a.Data() raw, ignoring strides")
-
 		a := leaf(seq(6), 2, 3)
 		b := leaf(seq(6), 3, 2)
 		gradcheck.Check(t, "add/aT", func() *tensor.Tensor {
@@ -318,4 +316,63 @@ func TestGradcheckInverse(t *testing.T) {
 	}, 3, 3)
 
 	gradcheck.Check(t, "inverse", func() *tensor.Tensor { return a.Inverse() }, a)
+}
+
+// Clone is the identity, so gradients must pass straight through it -- including
+// when the source is a strided view that Clone has to materialise.
+func TestGradcheckClone(t *testing.T) {
+	a := leaf(seq(6), 2, 3)
+	gradcheck.Check(t, "clone", func() *tensor.Tensor { return a.Clone() }, a)
+
+	b := leaf(seq(6), 2, 3)
+	gradcheck.Check(t, "clone/bT", func() *tensor.Tensor {
+		return b.Transpose([]int{1, 0}).Clone()
+	}, b)
+}
+
+// Detach must stop the gradient: the leaf behind it receives nothing.
+func TestDetachStopsGradient(t *testing.T) {
+	a := leaf(seq(6), 2, 3)
+	d := a.Detach()
+
+	if d.RequiresGrad {
+		t.Fatal("Detach: result should not require grad")
+	}
+	if d.Parents != nil || d.Backward != nil {
+		t.Fatal("Detach: result should be disconnected from the graph")
+	}
+
+	d.Mul(d).Sum().BackProp()
+	if a.Grad() != nil {
+		t.Fatalf("Detach: gradient leaked to the source: %v", a.Grad())
+	}
+}
+
+// BackProp on a non-scalar root must refuse rather than silently seeding ones.
+func TestBackPropRejectsNonScalarRoot(t *testing.T) {
+	a := leaf(seq(6), 2, 3)
+	out := a.Mul(a)
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("BackProp on a (2,3) root should panic, not seed all-ones")
+		}
+	}()
+	out.BackProp()
+}
+
+// BackPropWith is the escape hatch for a non-scalar root.
+func TestBackPropWithSeed(t *testing.T) {
+	a := leaf([]float32{1, 2, 3, 4}, 2, 2)
+	out := a.MulScalar(3.0)
+
+	out.BackPropWith([]float32{1, 1, 1, 1})
+
+	// d(3a)/da = 3 for every element.
+	got := a.Grad()
+	for i, v := range got {
+		if v < 2.99 || v > 3.01 {
+			t.Fatalf("element %d: got %v, want 3", i, v)
+		}
+	}
 }
