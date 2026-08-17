@@ -54,32 +54,19 @@ func (t *Tensor) PhysicalIndexFromLinearIndex(index int) int {
 	return physicalIndex
 }
 
-// Contiguous returns a new tensor that is a contiguous copy of the original tensor.
-// If the original tensor is already contiguous, it returns the original tensor.
+// Contiguous returns a tensor with the same logical value as t, laid out
+// contiguously in row-major order. If t is already contiguous it is returned
+// unchanged; otherwise the data is materialised into a fresh buffer.
+//
+// The result stays connected to the autograd graph: a copy is the identity, so
+// gradients flow straight back to t. It previously returned a detached tensor,
+// which made `tensor.Contiguous(x)` a silent gradient sink -- and cost real
+// debugging time three separate times.
 func Contiguous(t *Tensor) *Tensor {
 	if t.IsContiguous() {
 		return t
 	}
-
-	shape := t.Shape
-	totalSize := TotalSize(shape)
-	newData := t.Device.Allocate(totalSize)
-
-	// Let the backend perform the contiguous copy (handles device-specific paths)
-	// Provide the data starting at the tensor's offset so the backend's mapping
-	// logic can operate as if the logical origin is index 0.
-	// Backends implement Contiguous(dst) by writing into the provided out buffer.
-	t.Device.Contiguous(t.Data(), newData, shape, t.Strides, 0)
-
-	return &Tensor{
-		data:         StorageFrom(newData),
-		Shape:        append([]int{}, shape...),
-		Strides:      ComputeStrides(shape),
-		grad:         nil,
-		contiguous:   true,
-		Device:       t.Device,
-		RequiresGrad: t.RequiresGrad,
-	}
+	return t.Clone()
 }
 
 // ComputeStrides calculates the default row-major strides for a given shape.

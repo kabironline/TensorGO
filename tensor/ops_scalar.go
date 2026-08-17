@@ -13,7 +13,6 @@ func (t *Tensor) AddScalar(scalar float32) *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 		Parents:      []*Tensor{t},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {
@@ -35,7 +34,6 @@ func (t *Tensor) SubScalar(scalar float32) *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 		Parents:      []*Tensor{t},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {
@@ -57,7 +55,6 @@ func (t *Tensor) MulScalar(scalar float32) *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 		Parents:      []*Tensor{t},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {
@@ -81,7 +78,6 @@ func (t *Tensor) DivScalar(scalar float32) *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 		Parents:      []*Tensor{t},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {

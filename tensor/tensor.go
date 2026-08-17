@@ -19,8 +19,6 @@ type Tensor struct {
 	Device backend.Backend
 
 	RequiresGrad bool
-
-	contiguous bool
 }
 
 func NewTensor(data []float32, shape []int, parents ...*Tensor) *Tensor {
@@ -58,7 +56,6 @@ func NewTensor(data []float32, shape []int, parents ...*Tensor) *Tensor {
 		Parents:      parents,
 		Device:       dev,
 		RequiresGrad: requiresGrad,
-		contiguous:   true,
 	}
 }
 
@@ -78,11 +75,10 @@ func NewEmptyTensor(shape []int, dev backend.Backend) *Tensor {
 	dataStorage := StorageFrom(dev.Allocate(size))
 
 	return &Tensor{
-		data:       dataStorage,
-		Shape:      shape,
-		Strides:    ComputeStrides(shape),
-		Device:     dev,
-		contiguous: true,
+		data:    dataStorage,
+		Shape:   shape,
+		Strides: ComputeStrides(shape),
+		Device:  dev,
 	}
 }
 
@@ -98,7 +94,6 @@ func FromData(data []float32, shape []int, dev backend.Backend, requiresGrad boo
 		Device:       dev,
 		RequiresGrad: requiresGrad,
 		Parents:      parents,
-		contiguous:   true,
 	}
 }
 
@@ -121,8 +116,7 @@ func NewIdentityTensor(size int) *Tensor {
 	// 			Strides: []int{size, 1},
 	// 			grad:         nil,
 	// 			Device:       dev,
-	// 			contiguous:   true,
-	// 		}
+	// 		// 		}
 	// 	}
 	// }
 
@@ -135,12 +129,11 @@ func NewIdentityTensor(size int) *Tensor {
 	dataStorage := StorageFrom(data)
 
 	return &Tensor{
-		data:       dataStorage,
-		Shape:      []int{size, size},
-		Strides:    []int{size, 1},
-		grad:       nil,
-		Device:     dev,
-		contiguous: true,
+		data:    dataStorage,
+		Shape:   []int{size, size},
+		Strides: []int{size, 1},
+		grad:    nil,
+		Device:  dev,
 	}
 }
 
@@ -246,7 +239,21 @@ func (t *Tensor) TotalSize() int {
 // row-major order. Named IsContiguous, not Contiguous, so it cannot be confused
 // with the package-level Contiguous(t) that returns a materialised copy.
 func (t *Tensor) IsContiguous() bool {
-	return t.contiguous
+	if len(t.Shape) != len(t.Strides) {
+		return false
+	}
+	expected := ComputeStrides(t.Shape)
+	for i := range expected {
+		// A dimension of extent 1 is only ever indexed at 0, so its stride cannot
+		// affect the layout -- a transpose of (1,n) is still contiguous.
+		if t.Shape[i] == 1 {
+			continue
+		}
+		if t.Strides[i] != expected[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Free releases GPU memory for this tensor's data and gradients.
@@ -417,7 +424,6 @@ func (t *Tensor) Detach() *Tensor {
 		Backward:     nil,
 		Device:       t.Device,
 		RequiresGrad: false,
-		contiguous:   t.contiguous,
 	}
 }
 
@@ -427,14 +433,16 @@ func (t *Tensor) Detach() *Tensor {
 //
 // The result is always contiguous, even when the source is a strided view.
 func (t *Tensor) Clone() *Tensor {
-	src := t
-	if !t.IsContiguous() {
-		src = Contiguous(t)
-	}
-
 	n := TotalSize(t.Shape)
 	buf := t.Device.Allocate(n)
-	t.Device.Copy(buf, src.Data()[:n])
+
+	// Materialise directly rather than via Contiguous(t): Contiguous now delegates
+	// to Clone for the non-contiguous case, so calling it here would recurse.
+	if t.IsContiguous() {
+		t.Device.Copy(buf, t.Data()[:n])
+	} else {
+		t.Device.Contiguous(t.Data(), buf, t.Shape, t.Strides, 0)
+	}
 
 	out := &Tensor{
 		data:         StorageFrom(buf),
@@ -443,7 +451,6 @@ func (t *Tensor) Clone() *Tensor {
 		Parents:      []*Tensor{t},
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
-		contiguous:   true,
 	}
 
 	if t.RequiresGrad {

@@ -14,7 +14,6 @@ func (t *Tensor) ReLU() *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 		Parents:      []*Tensor{t},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {
@@ -38,7 +37,6 @@ func (t *Tensor) Sigmoid() *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 		Parents:      []*Tensor{t},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {
@@ -61,7 +59,6 @@ func (t *Tensor) Tanh() *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 		Parents:      []*Tensor{t},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {
@@ -84,7 +81,6 @@ func (t *Tensor) Exp() *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 		Parents:      []*Tensor{t},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {
@@ -108,7 +104,6 @@ func (t *Tensor) Log() *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 		Parents:      []*Tensor{t},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {
@@ -132,7 +127,6 @@ func (t *Tensor) Square() *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 		Parents:      []*Tensor{t},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {
@@ -162,7 +156,6 @@ func (t *Tensor) Softmax() *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
 		Parents:      []*Tensor{t},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {

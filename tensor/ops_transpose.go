@@ -36,7 +36,6 @@ func (t *Tensor) Transpose(order []int) *Tensor {
 		Parents:      []*Tensor{t},
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
-		contiguous:   false, // transposed tensors are not contiguous
 	}
 
 	out.Backward = func() {
@@ -122,7 +121,6 @@ func (t *Tensor) Reshape(newShape []int) *Tensor {
 		Parents:      []*Tensor{t},
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
-		contiguous:   true,
 	}
 
 	if t.RequiresGrad {

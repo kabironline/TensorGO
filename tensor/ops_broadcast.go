@@ -73,7 +73,6 @@ func (t *Tensor) BroadcastTo(targetShape []int) *Tensor {
 		Parents:      []*Tensor{t},
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
-		contiguous:   false, // broadcasted tensors are not contiguous
 	}
 
 	out.Backward = func() {
@@ -120,7 +119,6 @@ func BroadcastAddOp(a, b *Tensor) *Tensor {
 		Device:       a.Device,
 		RequiresGrad: a.RequiresGrad || b.RequiresGrad,
 		Parents:      []*Tensor{a, b},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {
@@ -169,7 +167,6 @@ func BroadcastSubOp(a, b *Tensor) *Tensor {
 		Device:       a.Device,
 		RequiresGrad: a.RequiresGrad || b.RequiresGrad,
 		Parents:      []*Tensor{a, b},
-		contiguous:   true,
 	}
 	out.Backward = func() {
 		// out = a - b, so:
@@ -219,7 +216,6 @@ func BroadcastMulOp(a, b *Tensor) *Tensor {
 		Device:       a.Device,
 		RequiresGrad: a.RequiresGrad || b.RequiresGrad,
 		Parents:      []*Tensor{a, b},
-		contiguous:   true,
 	}
 
 	out.Backward = func() {
@@ -270,7 +266,6 @@ func BroadcastDivOp(a, b *Tensor) *Tensor {
 		Device:       a.Device,
 		RequiresGrad: a.RequiresGrad || b.RequiresGrad,
 		Parents:      []*Tensor{a, b},
-		contiguous:   true,
 	}
 	out.Backward = func() {
 		// formula for gradient accumulation:

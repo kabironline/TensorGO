@@ -8,15 +8,20 @@
 > Working mode: Claude is architect & reviewer; **you write the code.**
 > Companion: [Tensor-Storage-Migration.md](./Tensor-Storage-Migration.md).
 
-**Status as of 2026-08-16**
+**Status as of 2026-08-17**
 
 | | |
 |---|---|
-| Builds | `CGO_ENABLED=0` on Linux/Windows/macOS ✅ · `-tags cuda` ✅ |
-| Gradchecks | **35 pass, 1 skip** |
+| Builds | `CGO_ENABLED=0` on Linux/Windows/macOS ✅ · `-tags cuda` ⚠️ blocked (see P4 note) |
+| Gradchecks | **47 checks, 0 skips** · 45 top-level tests, 0 failures |
 | Coverage | `tensor` 59.3% (was unmeasurable) |
-| Canaries | MNIST MLP **95.5%** (10s) · MNIST CNN **98.7%** (99s) |
-| Phase | P0 ✅ done · **P1 ~80%** · P2–P7 pending |
+| Canaries | MNIST MLP **95.5–96.7%** (10s) · MNIST CNN **98.7%** (99s) |
+| Phase | P0 ✅ done · **P1 ✅ done** · P2 next |
+
+⚠️ `go build -tags cuda ./...` currently fails: `LinAlgOps` was added to the
+*required* `Backend` interface, so `*CUDABackend` no longer satisfies it. Either
+move `LinAlgOps` to an optional type-asserted interface (recommended — see P4
+item 4) or implement `Inverse` on CUDA via cuSOLVER.
 
 ---
 
@@ -86,7 +91,7 @@ Every phase ends compilable on all three OSes with the suite green.
 | Phase | Theme | Status |
 |---|---|---|
 | **P0** | Build, test infrastructure, CI | ✅ **done** |
-| **P1** | Autograd correctness (CPU) | ◐ **~80%** |
+| **P1** | Autograd correctness (CPU) | ✅ **done** |
 | **P2** | Ownership & lifetime (the `Scope`) | ⬜ |
 | **P3** | Device safety — kill the fake slice | ⬜ |
 | **P4** | Errors & API surface (only breaking phase) | ⬜ |
@@ -111,37 +116,39 @@ Gradcheck found **three** predicted bugs on its first run. All three are now fix
 
 ---
 
-### P1 — Autograd correctness ◐ in progress
+### P1 — Autograd correctness ✅ done 2026-08-17
 
 Two structural decisions drive it, both now **adopted**:
 
-- **Gradients are always logical-order, contiguous, `TotalSize(Shape)`.** `ensureGrad` and `AllocGrad` merged; `Transpose`'s backward permutes into logical order rather than scattering physically.
-- **One offset representation.** `Slice` carries its offset in the storage (`Offset` stays 0) instead of doing both.
+- **Gradients are always logical-order, contiguous, `TotalSize(Shape)`.** `ensureGrad` and `AllocGrad` merged; `AccumulateGrad` is a single element-wise `Device.Add` with no physical-index path; `Transpose`'s backward permutes into logical order before accumulating.
+- **One offset representation.** `Slice` carries its offset in the storage. `Tensor.Offset` is now deleted outright — it was provably always zero.
 
 **Done**
 
 | Fix | Was |
 |---|---|
-| `MatMul` leading dimension | `Strides[0]` passed as `lda`; panicked on CPU, corrupted silently on CUDA. Replaced by `MatOperand` + `asMatOperand`, collapsing `MatrixOps` to a single `MatMul(a, b, out, alpha, beta)` |
-| `MatVecMul`/`VecMatMul` | Hand-built views with no `Parents`/`Backward` — the vector never trained. Now fused single-gemm ops with real backwards |
+| `MatMul` leading dimension | `Strides[0]` passed as `lda`; panicked on CPU, corrupted silently on CUDA. Replaced by `MatOperand` + `asMatOperand`, collapsing `MatrixOps` to one `MatMul(a, b, out, alpha, beta)` |
+| `MatVecMul`/`VecMatMul` | Hand-built views with no `Parents`/`Backward` — the vector never trained. Now fused single-gemm ops sharing a `vecOperand` helper |
 | `Slice` double offset | Resliced storage *and* set `Offset`; every read landed at `base[2*offset]` |
-| `Slice` backward | Accumulated into an unzeroed pooled buffer |
-| `Inverse` backward | Read the forward result instead of `out.Grad()`. Now composite: `-(Yᵀ @ gradOut @ Yᵀ)`, with `alpha = -1` folding in the negation |
-| `Reshape` on a view | Reassigned the receiver to a graph-detached `Contiguous` copy — total gradient loss |
+| `Slice` backward buffer | Accumulated into an unzeroed pooled buffer |
+| `Inverse` | Host-side gonum with no staging (segfault on GPU) and a backward that read the forward result instead of `out.Grad()`. Now a `LinAlgOps` backend op with a composite backward: `-(Yᵀ @ gradOut @ Yᵀ)`, `alpha = -1` folding in the negation |
+| `Reshape` on a view | Reassigned the receiver to a graph-detached copy — total gradient loss |
 | `engine.go` nil-grad | Called `Backward()` on nodes with no gradient → nil-slice index |
-| Grad layout | `ensureGrad` sized by storage, `AllocGrad` by shape; `AccumulateGrad` stored logically on one path and physically on another |
+| Grad layout | `ensureGrad` sized by storage, `AllocGrad` by shape; `AccumulateGrad` stored logically on one path and physically on another, chosen by an incidental length comparison |
+| `Add` fast path | Read `a.Data()` raw, ignoring strides. Now guarded on `sameStrides` + contiguity, so a strided operand falls through to `BroadcastAddOp` |
+| `Broadcast{Add,Sub,Mul,Div}Op` | Set `Parents` but no `Backward` — backprop through them silently yielded zero. Now complete, with `Sub`'s `gradB` correctly negated and nil-grad guards throughout |
+| API tidy | `t.Contiguous()` → `t.IsContiguous()` (it collided with the package-level `Contiguous(t)` returning a different type); `computeStrides` deduped into `ComputeStrides`; `Tensor.Offset` deleted; added `Detach`, `Clone`, and `BackPropWith(seed)`; `BackProp` now **rejects a non-scalar root** instead of silently seeding all-ones |
 
-**Remaining**
+**Also done — the final three**
 
-1. **`Add` fast path ignores strides** — `ops_matrix.go`, the one open gradcheck skip. Guard the fast path on contiguity so a strided operand falls through to `BroadcastAddOp`, which already materialises.
-2. **`AccumulateGrad` dead paths** — with the new invariant, path 3 is unreachable and path 2 always fires. Collapse to a single `Device.Add`. Pure deletion, no behaviour change; also removes the `t.grad` reassignment that orphans `ToGradTensor` handles.
-3. **`Slice` backward indexes physically** — passes only because its parents are contiguous. Align to the logical rule; add slice-of-view to the gradcheck matrix.
-4. **`contiguous` is a stored bool** that `Transpose`/`BroadcastTo`/`Slice` forget to set. Derive it from strides.
-5. **`Contiguous(t)` detaches from the graph** — exported, so `tensor.Contiguous(x)` in user code is a silent gradient sink. It has bitten three times. Unexport it or give it a copy-backward.
-6. **`BroadcastAddOp`/`Sub`/`Mul`/`DivOp`** set `Parents` but no `Backward`. Unexport or complete them.
-7. **API tidy** — dedupe `ComputeStrides`/`computeStrides`; resolve `Contiguous` meaning both a package function and a method; delete the now-dead `Tensor.Offset`; add `Detach`, `Clone`; make `BackProp` reject a non-scalar root.
+| Fix | Was |
+|---|---|
+| `Slice` backward | Sized `parentGrad` by `len(t.Data())` and scattered at physical offsets. Now sized `TotalSize(t.Shape)` and indexed through `ComputeStrides(t.Shape)`, so a slice *of a view* works — covered by `TestGradcheckSliceOfView` |
+| `contiguous` stored bool | 10+ literal assignments that view constructors kept forgetting (`Transpose` never set it at all). **Field deleted**; `IsContiguous()` now derives it from `strides == ComputeStrides(shape)`, with an extent-1 exception since a dimension of size 1 cannot affect layout |
+| `Contiguous(t)` detaching | Returned a tensor with no `Parents`/`Backward` — a silent gradient sink that cost debugging time three separate times. Now `if t.IsContiguous() { return t }; return t.Clone()`, so gradients flow back. `Clone` materialises via `Device.Contiguous` directly to avoid mutual recursion |
 
-**Gate:** gradcheck green for every op × {contiguous, transposed, sliced, offset, broadcast, reshaped}; a test that calls `BackProp` twice; a test mixing `RequiresGrad=false` nodes.
+**Gate — all met.** Gradcheck green for every op × {contiguous, transposed, sliced, offset, broadcast, reshaped} ✅ **47 checks, 0 skips**; `TestBackPropTwiceAccumulates` ✅ (and asserts `ZeroGrad` resets); `TestBackPropMixedRequiresGrad` ✅ (a frozen input feeding a trainable parameter through `ReLU`, whose backward has no nil-guard of its own).
+
 
 ---
 
@@ -278,4 +285,5 @@ Each of these cost real time in August 2026.
 3. **A malformed build constraint silently becomes a comment.** `// go:build cuda` (with a space) and `//go:build cuda examples` (missing `&&`) both disabled their tags — one silently, one as a vet error.
 4. **`Contiguous(t)` returns a graph-detached tensor.** It has caused a silent gradient sink three separate times. Exported, so user code hits it too.
 5. **Never accept a descriptor field you don't honour.** `Inverse` took a `MatOperand` and ignored `LD` — the same bug class as the `lda` bug it was written after.
-6. **A passing canary is evidence, not proof.** MNIST hit 95.5% while `Slice`, `Inverse`, and `Add`-on-views all had wrong gradients — an MLP simply never touches those paths. Adam also normalises by gradient magnitude, so it is especially forgiving of scale errors.
+6. **Tightening a guard is not the same as deleting a branch.** After the grad-layout fix made `AccumulateGrad`'s physical-scatter path unreachable, adding `&& t.IsContiguous()` to the *fast*-path condition re-enabled it — reintroducing the two-conventions bug and turning nine passing gradchecks red. When an invariant makes a branch dead, delete the branch; leaving it and narrowing the guard around it invites exactly this.
+7. **A passing canary is evidence, not proof.** MNIST hit 95.5% while `Slice`, `Inverse`, and `Add`-on-views all had wrong gradients — an MLP simply never touches those paths. Adam also normalises by gradient magnitude, so it is especially forgiving of scale errors.

@@ -376,3 +376,72 @@ func TestBackPropWithSeed(t *testing.T) {
 		}
 	}
 }
+
+// Slice of a *view*: the parent is itself non-contiguous, so the slice backward
+// has to index the parent logically rather than through its storage strides.
+func TestGradcheckSliceOfView(t *testing.T) {
+	a := leaf(seq(12), 3, 4)
+	gradcheck.Check(t, "slice-of-transpose", func() *tensor.Tensor {
+		return a.Transpose([]int{1, 0}).Slice([]int{1, 0}, []int{3, 3})
+	}, a)
+
+	b := leaf(seq(12), 3, 4)
+	gradcheck.Check(t, "slice-of-reshape", func() *tensor.Tensor {
+		return b.Reshape([]int{4, 3}).Slice([]int{1, 0}, []int{4, 2})
+	}, b)
+}
+
+// Calling BackProp twice must accumulate, not silently double-count a stale
+// gradient or reuse a buffer that was never cleared.
+func TestBackPropTwiceAccumulates(t *testing.T) {
+	a := tensor.NewTensor([]float32{1, 2, 3, 4}, []int{2, 2})
+	a.RequiresGrad = true
+
+	a.MulScalar(3.0).Sum().BackProp()
+	first := append([]float32(nil), a.Grad()...)
+
+	// A second independent pass over a fresh graph adds to the same leaf.
+	a.MulScalar(3.0).Sum().BackProp()
+	second := a.Grad()
+
+	for i := range first {
+		if want := 2 * first[i]; second[i] < want-1e-4 || second[i] > want+1e-4 {
+			t.Fatalf("element %d: after two passes got %v, want %v (accumulated)",
+				i, second[i], want)
+		}
+	}
+
+	// ZeroGrad must then reset it.
+	a.ZeroGrad()
+	for i, v := range a.Grad() {
+		if v != 0 {
+			t.Fatalf("ZeroGrad left element %d at %v", i, v)
+		}
+	}
+}
+
+// A RequiresGrad=false tensor can sit in the middle of a graph whose leaves do
+// require grad. The engine must walk through it without tripping over its
+// missing gradient buffer.
+func TestBackPropMixedRequiresGrad(t *testing.T) {
+	frozen := tensor.NewTensor([]float32{2, 2, 2, 2}, []int{2, 2}) // RequiresGrad false
+	trained := tensor.NewTensor([]float32{1, 2, 3, 4}, []int{2, 2})
+	trained.RequiresGrad = true
+
+	// A frozen input feeding a trainable parameter, then through ReLU -- the op
+	// whose backward indexes out.Grad() without a nil check of its own.
+	frozen.Mul(trained).ReLU().Sum().BackProp()
+
+	if trained.Grad() == nil {
+		t.Fatal("trainable leaf received no gradient")
+	}
+	if frozen.Grad() != nil {
+		t.Fatalf("frozen leaf should have no gradient, got %v", frozen.Grad())
+	}
+	// d(sum(relu(2*x)))/dx = 2 for every positive element.
+	for i, v := range trained.Grad() {
+		if v < 1.99 || v > 2.01 {
+			t.Fatalf("element %d: got %v, want 2", i, v)
+		}
+	}
+}

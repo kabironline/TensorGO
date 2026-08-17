@@ -10,7 +10,7 @@ import (
 // Add performs element-wise addition between two tensors.
 func (a *Tensor) Add(b *Tensor) *Tensor {
 	// Simple path if shapes match, strides match, and both tensors are contiguous. This avoids broadcasting and uses optimized Gonum paths.
-	if sameShape(a.Shape, b.Shape) && sameStrides(a.Strides, b.Strides) && a.contiguous && b.contiguous {
+	if sameShape(a.Shape, b.Shape) && sameStrides(a.Strides, b.Strides) && a.IsContiguous() && b.IsContiguous() {
 		outData := a.Device.Allocate(TotalSize(a.Shape))
 		a.Device.Add(a.Data(), b.Data(), outData, TotalSize(a.Shape))
 
@@ -22,7 +22,6 @@ func (a *Tensor) Add(b *Tensor) *Tensor {
 			Device:       a.Device,
 			RequiresGrad: a.RequiresGrad || b.RequiresGrad,
 			Parents:      []*Tensor{a, b},
-			contiguous:   true,
 		}
 
 		out.Backward = func() {
@@ -197,7 +196,6 @@ func (a *Tensor) MatMul(b *Tensor) *Tensor {
 		Device:       a.Device,
 		RequiresGrad: a.RequiresGrad || b.RequiresGrad,
 		Parents:      []*Tensor{a, b},
-		contiguous:   true,
 	}
 
 	aOp, releaseA, err := a.asMatOperand()
@@ -297,7 +295,6 @@ func (t *Tensor) MatMulAddBias(b, c *Tensor) *Tensor {
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad || b.RequiresGrad,
 		Parents:      []*Tensor{t, b},
-		contiguous:   true,
 	}
 
 	matmulOut.Backward = func() {
@@ -384,7 +381,6 @@ func (a *Tensor) MatVecMul(v *Tensor) *Tensor {
 		Device:       a.Device,
 		RequiresGrad: a.RequiresGrad || v.RequiresGrad,
 		Parents:      []*Tensor{a, v},
-		contiguous:   true,
 	}
 
 	// out(m,1) = a(m,n) @ v(n,1)
@@ -450,7 +446,6 @@ func (v *Tensor) VecMatMul(b *Tensor) *Tensor {
 		Device:       v.Device,
 		RequiresGrad: v.RequiresGrad || b.RequiresGrad,
 		Parents:      []*Tensor{v, b},
-		contiguous:   true,
 	}
 
 	// out(1,n) = v(1,m) @ b(m,n)
@@ -604,7 +599,6 @@ func (t *Tensor) Slice(starts, ends []int) *Tensor {
 		Strides:      strides,
 		Device:       t.Device,
 		RequiresGrad: t.RequiresGrad,
-		contiguous:   false, // Sliced tensors are not contiguous by default
 	}
 	out.Parents = []*Tensor{t}
 
@@ -615,24 +609,30 @@ func (t *Tensor) Slice(starts, ends []int) *Tensor {
 		}
 		og := out.Grad()
 
-		// Build a full-sized gradient for the parent and place the sliced gradient into it.
-		parentGrad := pools.GetZeroedBuffer(len(t.Data()))
+		// The parent's gradient is LOGICAL-order and TotalSize(t.Shape) long, like
+		// every gradient in the engine -- not storage-sized and not physically
+		// indexed. So map each output coordinate to the parent's logical index
+		// using the parent's contiguous strides, never t.Strides.
+		parentGrad := pools.GetZeroedBuffer(TotalSize(t.Shape))
+		defer pools.PutBuffer(parentGrad)
 
-		// Fast path for scalar-like result (0-d or all dims size 1).
-		if len(out.Shape) == 0 || len(og) == 1 && product(out.Shape) == 1 {
-			parentGrad[offset] += og[0]
-			t.AccumulateGrad(parentGrad)
-			pools.PutBuffer(parentGrad)
-			return
+		tStrides := ComputeStrides(t.Shape)
+
+		// Logical index of the slice origin within the parent.
+		originIdx := 0
+		for d := range starts {
+			s := starts[d]
+			if s < 0 {
+				s += t.Shape[d]
+			}
+			originIdx += s * tStrides[d]
 		}
 
-		// Iterate over coordinates in the output tensor and map them back to parent indices.
 		indices := make([]int, len(out.Shape))
 		for _, v := range og {
-			// compute parent flat index
-			pIdx := offset
+			pIdx := originIdx
 			for d := range indices {
-				pIdx += indices[d] * strides[d]
+				pIdx += indices[d] * tStrides[d]
 			}
 			parentGrad[pIdx] += v
 
@@ -647,7 +647,6 @@ func (t *Tensor) Slice(starts, ends []int) *Tensor {
 		}
 
 		t.AccumulateGrad(parentGrad)
-		pools.PutBuffer(parentGrad)
 	}
 
 	return out
