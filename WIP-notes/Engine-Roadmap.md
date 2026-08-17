@@ -12,16 +12,18 @@
 
 | | |
 |---|---|
-| Builds | `CGO_ENABLED=0` on Linux/Windows/macOS ✅ · `-tags cuda` ⚠️ blocked (see P4 note) |
+| Builds | `CGO_ENABLED=0` on Linux/Windows/macOS ✅ · `-tags cuda` ✅ |
 | Gradchecks | **47 checks, 0 skips** · 45 top-level tests, 0 failures |
 | Coverage | `tensor` 59.3% (was unmeasurable) |
 | Canaries | MNIST MLP **95.5–96.7%** (10s) · MNIST CNN **98.7%** (99s) |
 | Phase | P0 ✅ done · **P1 ✅ done** · P2 next |
 
-⚠️ `go build -tags cuda ./...` currently fails: `LinAlgOps` was added to the
-*required* `Backend` interface, so `*CUDABackend` no longer satisfies it. Either
-move `LinAlgOps` to an optional type-asserted interface (recommended — see P4
-item 4) or implement `Inverse` on CUDA via cuSOLVER.
+⚠️ `TestCudaDMAS` still fails with `ToCPU copy failed: 1` — pre-existing,
+reproduced on a clean commit months ago, and its panic aborts the whole CUDA
+package run (other CUDA tests need `-run` to execute). Diagnosis is P3 item 4.
+
+`LinAlgOps` is still in the *required* `Backend` interface. CUDA now implements
+`Inverse`, so the build is unblocked, but the design point stands — see P4 item 4.
 
 ---
 
@@ -244,6 +246,7 @@ The original phase 1, landing last because it is only provable once gradcheck ex
 
 ### P7 — Performance and release
 
+0. **Hoist per-call scratch allocations.** `cuda_inverse` does a `cudaMalloc`/`cudaFree` per call for its `info` flag, and the LU path does five. At n=8 the measured 135 µs is almost entirely allocation, launch, and sync overhead rather than arithmetic. Route this scratch through `memory_pool.go`, or keep a small per-backend workspace.
 1. Replace the ~23 `op_stubs.go` round-trip ops with real kernels. Each does D2H + host compute + H2D + full sync **and leaks a pool block per call**. On GPU this is where `Sigmoid`, `Tanh`, `Softmax`, and `MaxPool2d` backwards actually run today.
 2. `reduction.cu` and `contiguous.cu` `cudaMalloc` per call, bypassing the pool.
 3. Pinned host memory; non-blocking stream; remove per-op `cudaStreamSynchronize`.
