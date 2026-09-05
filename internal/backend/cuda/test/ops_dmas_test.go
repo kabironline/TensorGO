@@ -21,6 +21,12 @@ func TestCudaDMAS(t *testing.T) {
 
 	// Register and set default so helper constructors can find it
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	t.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	size := 1024
 	hA := make([]float32, size)
@@ -111,6 +117,12 @@ func TestCudaAddVectorized(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	t.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	// Test various sizes to verify both float4 vectorized path and scalar remainder
 	testCases := []int{
@@ -160,6 +172,12 @@ func TestCudaSubVectorized(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	t.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	// Test various sizes including non-multiples of 4
 	testCases := []int{1, 3, 4, 7, 16, 100, 1024, 1025}
@@ -198,6 +216,13 @@ func TestCudaAddSubEdgeCases(t *testing.T) {
 
 	cu, err := cuda.NewCUDABackend(0)
 	assert.NoError(t, err)
+
+	// Same reason as the other CUDA tests: without a default backend the tensors
+	// below are built on the host, and ToCPU on host memory fails.
+	backend.RegisterBackend("cuda", cu)
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	t.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	// Test with zero inputs
 	t.Run("ZeroInputs", func(t *testing.T) {

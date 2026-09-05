@@ -21,6 +21,12 @@ func TestCudaConv2DForwardMatchesCPU(t *testing.T) {
 	cu, err := cuda.NewCUDABackend(0)
 	require.NoError(t, err)
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	t.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	cb := cpu.NewCPUBackend()
 
@@ -78,6 +84,12 @@ func TestCudaConv2DBackwardMatchesCPU(t *testing.T) {
 	cu, err := cuda.NewCUDABackend(0)
 	require.NoError(t, err)
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	t.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	cb := cpu.NewCPUBackend()
 
@@ -143,6 +155,12 @@ func BenchmarkCudaConv2DForward(b *testing.B) {
 	}
 
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	b.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	batchSize, inChannels, inHeight, inWidth := 32, 16, 32, 32
 	outChannels, kernelHeight, kernelWidth := 32, 3, 3
@@ -207,6 +225,12 @@ func BenchmarkCudaConv2DBackward(b *testing.B) {
 	}
 
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	b.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	batchSize, inChannels, inHeight, inWidth := 32, 16, 32, 32
 	outChannels, kernelHeight, kernelWidth := 32, 3, 3

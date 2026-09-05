@@ -97,41 +97,38 @@ func FromData(data []float32, shape []int, dev backend.Backend, requiresGrad boo
 	}
 }
 
-// initializes an identity matrix tensor of given size (size x size)
+// NewIdentityTensor returns a size x size identity matrix on the current
+// default backend.
+//
+// The diagonal is written on the host and then transferred, never poked into
+// device memory directly: dev.Allocate returns a []float32 that may be a fake
+// slice over GPU memory, and indexing that from Go is a segfault.
 func NewIdentityTensor(size int) *Tensor {
+	if size <= 0 {
+		panic(fmt.Sprintf("NewIdentityTensor: size must be positive, got %d", size))
+	}
 	dev := backend.AutoSelectBackend()
 
-	// For GPU backends, create on CPU then copy to device
-	// TODO: IMPLMENET LATER
-	// if dev.IsGPU() {
-	// 	if transfer, ok := dev.(backend.MemoryTransfer); ok {
-	// 		h_data := make([]float32, size*size)
-	// 		for i := 0; i < size; i++ {
-	// 			h_data[i*size+i] = 1.0
-	// 		}
-	// 		data := transfer.ToDevice(h_data)
-	// 		return &Tensor{
-	// 			data:    data,
-	// 			Shape:   []int{size, size},
-	// 			Strides: []int{size, 1},
-	// 			grad:         nil,
-	// 			Device:       dev,
-	// 		// 		}
-	// 	}
-	// }
-
-	// For CPU backend (or GPU without MemoryTransfer), allocate and initialize directly
-	data := dev.Allocate(size * size)
+	host := make([]float32, size*size)
 	for i := 0; i < size; i++ {
-		data[i*size+i] = 1.0
+		host[i*size+i] = 1.0
 	}
 
-	dataStorage := StorageFrom(data)
+	data := host
+	if dev.IsGPU() {
+		transfer, ok := dev.(backend.MemoryTransfer)
+		if !ok {
+			panic(fmt.Sprintf(
+				"NewIdentityTensor: backend %q is a GPU but does not implement MemoryTransfer",
+				dev.Name()))
+		}
+		data = transfer.ToDevice(host)
+	}
 
 	return &Tensor{
-		data:    dataStorage,
+		data:    StorageFrom(data),
 		Shape:   []int{size, size},
-		Strides: []int{size, 1},
+		Strides: ComputeStrides([]int{size, size}),
 		grad:    nil,
 		Device:  dev,
 	}

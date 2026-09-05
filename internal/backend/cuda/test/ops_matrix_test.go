@@ -22,7 +22,12 @@ func TestCudaMatMul(t *testing.T) {
 
 	// Register and set default so helper constructors like NewIdentityTensor can find it
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
 	backend.SetDefaultBackend(cu)
+	t.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	size := 1024
 	a := tensor.NewIdentityTensor(size)
@@ -60,6 +65,12 @@ func BenchmarkCudaMatMul(b *testing.B) {
 	}
 
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	b.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	m := 4096
 	k := 2048
@@ -120,6 +131,12 @@ func TestCudaMatMulTransA(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	t.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	// Test case: C[2×2] = A^T @ B where A is [3×2], B is [3×2]
 	// A = [[1,2], [3,4], [5,6]]
@@ -163,6 +180,12 @@ func TestCudaMatMulTransB(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	t.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	// Test case: C[2×2] = A @ B^T where A is [2×3], B is [2×3]
 	// A = [[1,2,3], [4,5,6]]
@@ -210,6 +233,12 @@ func TestCudaMatMulTransA_NonSquare(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	t.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	// Test with non-square result: C[3×4] = A^T @ B where A is [5×3], B is [5×4]
 	// This test case specifically validates the leading dimension fix (lda=n not lda=m)
@@ -270,6 +299,12 @@ func TestCudaMatMulTransB_LargerMatrix(t *testing.T) {
 	assert.NoError(t, err)
 
 	backend.RegisterBackend("cuda", cu)
+	// Tensors built by the tensor package pick their device from
+	// AutoSelectBackend, which prefers "cpu". Without this the tensors below
+	// live on the host and every ToCPU on them fails with cudaErrorInvalidValue.
+	prevBackend := backend.GetDefaultBackend()
+	backend.SetDefaultBackend(cu)
+	t.Cleanup(func() { backend.SetDefaultBackend(prevBackend) })
 
 	// Larger test: ensure it works with typical neural network dimensions
 	m, k, n := 32, 128, 64 // batch_size=32, features=128, hidden=64

@@ -61,7 +61,8 @@ func (b *CUDABackend) ToCPU(data []float32) []float32 {
 	)
 
 	if res != C.cudaSuccess {
-		panic(fmt.Sprintf("ToCPU copy failed: %v", res))
+		panic(fmt.Sprintf("ToCPU copy failed: %s (%d)%s",
+			C.GoString(C.cudaGetErrorString(res)), int(res), describePointer(data)))
 	}
 
 	// Ensure the host buffer is ready before returning.
@@ -141,5 +142,38 @@ func (b *CUDABackend) Copy(dst, src []float32) {
 func (b *CUDABackend) Sync() {
 	if res := C.cudaStreamSynchronize(C.cudaStream_t(b.stream)); res != C.cudaSuccess {
 		panic(fmt.Sprintf("Sync failed: %v", res))
+	}
+}
+
+// describePointer classifies a buffer so a failed transfer says *why* it failed.
+//
+// ToCPU takes a []float32 that may be either a Go heap slice or the fake slice
+// over device memory that Allocate hands out -- nothing in the type
+// distinguishes them. Handing it a host pointer yields cudaErrorInvalidValue,
+// whose bare numeric code ("ToCPU copy failed: 1") is indistinguishable from a
+// stale or freed device pointer. Asking the driver removes the guesswork.
+//
+// Deleted in P3, when device buffers stop masquerading as []float32.
+func describePointer(data []float32) string {
+	if len(data) == 0 {
+		return ""
+	}
+	var attr C.struct_cudaPointerAttributes
+	if C.cudaPointerGetAttributes(&attr, unsafe.Pointer(unsafe.SliceData(data))) != C.cudaSuccess {
+		// Clear the sticky error the failed query just set.
+		C.cudaGetLastError()
+		return " -- pointer is not known to CUDA; it is almost certainly host memory " +
+			"(is the tensor actually on the GPU? backend.SetDefaultBackend may not be set)"
+	}
+	switch attr._type {
+	case C.cudaMemoryTypeHost:
+		return " -- pointer is host memory, not device memory"
+	case C.cudaMemoryTypeUnregistered:
+		return " -- pointer is unregistered host memory " +
+			"(is the tensor actually on the GPU? backend.SetDefaultBackend may not be set)"
+	case C.cudaMemoryTypeDevice:
+		return fmt.Sprintf(" -- pointer is device memory on device %d", int(attr.device))
+	default:
+		return " -- pointer is managed memory"
 	}
 }

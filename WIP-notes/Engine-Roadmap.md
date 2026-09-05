@@ -6,6 +6,7 @@
 > `Production-Readiness-Roadmap-2026-08-12.md`, both removed — see git history.
 >
 > Working mode: Claude is architect & reviewer; **you write the code.**
+> Picking this up on a new machine? Start with [RESUME-POINT.md](./RESUME-POINT.md).
 > Companion: [Tensor-Storage-Migration.md](./Tensor-Storage-Migration.md).
 
 **Status as of 2026-08-17**
@@ -18,9 +19,13 @@
 | Canaries | MNIST MLP **95.5–96.7%** (10s) · MNIST CNN **98.7%** (99s) |
 | Phase | P0 ✅ done · **P1 ✅ done** · P2 next |
 
-⚠️ `TestCudaDMAS` still fails with `ToCPU copy failed: 1` — pre-existing,
-reproduced on a clean commit months ago, and its panic aborts the whole CUDA
-package run (other CUDA tests need `-run` to execute). Diagnosis is P3 item 4.
+**The CUDA suite is green** — 23 tests, including the long-standing
+`TestCudaDMAS` `ToCPU copy failed: 1`. Root cause was not a memory bug: the tests
+registered the CUDA backend but never made it the *default*, and
+`AutoSelectBackend` prefers `"cpu"`, so the tensors were built on the host and
+`ToCPU` was handed host pointers. Fixing that exposed a second, real bug —
+`NewIdentityTensor` wrote its diagonal directly into device memory from Go (audit
+P0-3), whose GPU branch had been left commented out as "TODO: IMPLEMENT LATER".
 
 `LinAlgOps` is still in the *required* `Backend` interface. CUDA now implements
 `Inverse`, so the build is unblocked, but the design point stands — see P4 item 4.
@@ -185,7 +190,7 @@ June plan concluded — that is coupled to the compute migration.
 1. Convert `Backend` op signatures from `[]float32` to `*storage.Storage`, family by family. Delete `MemoryManager`'s `[]float32` methods as each lands.
 2. Delete the `Data()`/`Grad()` shims — they have **write** dependencies (`optim` writes parameters through them), so they need `CopyFrom`/`Fill` replacements, not just removal.
 3. Fix `cuda_contiguous`: swapped `total`/`offset` args, and `[]int`→`*C.int` truncation (device sees `shape=[2,0]`, kernel divides by zero).
-4. `runtime.LockOSThread` around device work — `cudaSetDevice` is thread-local and Go migrates goroutines. Prime suspect for the intermittent `ToCPU copy failed: 1`.
+4. `runtime.LockOSThread` around device work — `cudaSetDevice` is thread-local and Go migrates goroutines, so this still needs doing for multi-GPU. (It was *not* the cause of `ToCPU copy failed: 1`; that was host pointers reaching `ToCPU`, now diagnosed by `describePointer` and fixed at the call sites.)
 5. **Register the CUDA backend** — `NewCUDABackend` is never passed to `RegisterBackend`, so `backends["cuda"]` can never hit. Also reconcile `"cuda:0"` vs `"cuda"`.
 6. Fix the global cuDNN workspace: `cudaFree` + realloc with no stream sync while a conv may still be reading it — the clearest true async use-after-free in the tree.
 7. Sync policy: five unary ops bypass the stream and `cudaDeviceSynchronize` per launch; `Copy` is blocking; `ToDevice`/`WriteToDevice` issue async H2D from Go heap memory.
